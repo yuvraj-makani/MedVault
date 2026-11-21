@@ -1,0 +1,6 @@
+{
+  "name": "MedVault",
+  "description": "Patient-owned unified medical record vault with consent-gated clinical access and source-linked AI synthesis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
