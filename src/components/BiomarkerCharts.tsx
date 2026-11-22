@@ -15,7 +15,9 @@ interface DataPoint {
 
 function extractNumericMetric(records: MedicalRecord[], keyword: string): DataPoint[] {
   const points: DataPoint[] = [];
-  const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...records]
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
   for (const rec of sorted) {
     for (const fact of rec.facts) {
       if (fact.label.toLowerCase().includes(keyword.toLowerCase())) {

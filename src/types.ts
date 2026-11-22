@@ -12,13 +12,16 @@ export interface ExtractedFact {
   label: string;
   value: string;
   unit?: string;
-  flag?: 'normal' | 'borderline' | 'high' | 'low' | 'critical';
+  flag?: 'normal' | 'borderline' | 'high' | 'low' | 'critical' | 'unverified';
   uncertainty?: string;
+  verificationRequired?: boolean;
 }
+
+export type AllergySeverity = 'Mild' | 'Moderate' | 'Severe' | 'Unknown';
 
 export interface AllergyMention {
   substance: string;
-  severity: 'Mild' | 'Moderate' | 'Severe';
+  severity: AllergySeverity;
   reaction: string;
 }
 
@@ -30,10 +33,14 @@ export interface MedicalRecord {
   hospital: string;
   clinician: string;
   date: string;
+  dateStatus?: 'documented' | 'missing' | 'ambiguous';
   summary: string;
   facts: ExtractedFact[];
   medications: string[];
   allergiesMentioned: AllergyMention[];
+  missingFields?: string[];
+  confirmedNegatives?: string[];
+  verificationFlags?: string[];
   fileName: string;
   mimeType: string;
   fileSizeBytes: number;
@@ -51,7 +58,7 @@ export interface MedicalRecord {
 export interface AllergyEntry {
   id: string;
   substance: string;
-  severity: 'Mild' | 'Moderate' | 'Severe';
+  severity: AllergySeverity;
   reaction: string;
   hospital: string;
   recordedAt: string;
@@ -114,6 +121,12 @@ export interface AuthUser {
   medvaultId?: string;
 }
 
+export type EvidenceStatus =
+  | 'verified-record'
+  | 'unverified-extraction'
+  | 'unverified-citation'
+  | 'scope-restricted';
+
 export interface AISummaryFinding {
   category: string;
   statement: string;
@@ -122,6 +135,9 @@ export interface AISummaryFinding {
   sourceDate: string;
   uncertainty?: string;
   citationVerified?: boolean;
+  sourceQuote?: string;
+  evidenceStatus?: EvidenceStatus;
+  explanation?: string;
 }
 
 export interface AISummaryMedication {
@@ -130,13 +146,22 @@ export interface AISummaryMedication {
   sourceRecordId: string;
   sourceHospital: string;
   citationVerified?: boolean;
+  sourceQuote?: string;
+  evidenceStatus?: EvidenceStatus;
 }
 
 export interface AISummaryConflict {
   substance: string;
   conflictSummary: string;
+  conflictReason?: string;
   sourceRecordIds: string[];
   actionRequired: string;
+  evidenceSnippets?: {
+    recordId: string;
+    hospital: string;
+    severity: string;
+    excerpt: string;
+  }[];
 }
 
 export interface AISummaryResult {
@@ -159,10 +184,15 @@ export interface ExtractionDraft {
   hospital: string;
   clinician: string;
   date: string;
+  dateStatus?: 'documented' | 'missing' | 'ambiguous';
+  dateUncertainty?: string;
   summary: string;
   facts: ExtractedFact[];
   medications: string[];
   allergiesMentioned: AllergyMention[];
+  missingFields?: string[];
+  confirmedNegatives?: string[];
+  verificationFlags?: string[];
   extractionNotes: string;
   model: string;
 }

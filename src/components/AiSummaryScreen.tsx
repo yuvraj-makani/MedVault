@@ -432,7 +432,7 @@ export const AiSummaryScreen: React.FC<AiSummaryScreenProps> = ({
                 </h2>
               </div>
               {summary.allergyConflicts.map((c, idx) => (
-                <div key={idx} className="rounded-lg border border-amber-200 bg-white p-4 space-y-2">
+                <div key={idx} className="rounded-lg border border-amber-200 bg-white p-4 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold text-sm text-slate-900">{c.substance}</span>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -450,6 +450,26 @@ export const AiSummaryScreen: React.FC<AiSummaryScreenProps> = ({
                     </div>
                   </div>
                   <p className="text-xs text-slate-700">{c.conflictSummary}</p>
+                  {c.conflictReason && (
+                    <div className="text-xs text-amber-950 bg-amber-50/70 border border-amber-200 rounded px-2.5 py-1.5">
+                      <span className="font-semibold">Why flagged:</span> {c.conflictReason}
+                    </div>
+                  )}
+                  {c.evidenceSnippets && c.evidenceSnippets.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                      {c.evidenceSnippets.map((snippet, sIdx) => (
+                        <div
+                          key={sIdx}
+                          className="rounded border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-700"
+                        >
+                          <div className="font-mono font-semibold text-slate-900">
+                            {snippet.recordId} · {snippet.hospital} ({snippet.severity})
+                          </div>
+                          <div className="mt-0.5 text-slate-600">&ldquo;{snippet.excerpt}&rdquo;</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs font-medium text-amber-900">
                     Verification Required: {c.actionRequired}
                   </p>
@@ -465,36 +485,81 @@ export const AiSummaryScreen: React.FC<AiSummaryScreenProps> = ({
             </h2>
             <div className="divide-y divide-slate-100">
               {summary.keyFindings.map((finding, idx) => {
-                const isVerified =
-                  finding.citationVerified !== false &&
-                  accessibleRecords.some((r) => r.id === finding.sourceRecordId);
+                const sourceRec = accessibleRecords.find((r) => r.id === finding.sourceRecordId);
+                const isVerified = finding.citationVerified !== false && Boolean(sourceRec);
+                const isUnverifiedExtraction =
+                  finding.evidenceStatus === 'unverified-extraction' ||
+                  sourceRec?.extractionStatus === 'Extracted — Review Required';
+                const isScopeRestricted =
+                  finding.evidenceStatus === 'scope-restricted' || Boolean(sourceRec?.scopeRedacted);
+
                 return (
                   <div
                     key={idx}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+                    className="py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
                   >
-                    <div className="space-y-1">
-                      <div className="text-xs font-semibold text-slate-500">
-                        {finding.category}
+                    <div className="space-y-1.5 min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">
+                          {finding.category}
+                        </span>
+                        {!isVerified ? (
+                          <span className="text-[11px] font-medium text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
+                            Unverified Citation
+                          </span>
+                        ) : isUnverifiedExtraction ? (
+                          <span className="text-[11px] font-medium text-amber-900 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
+                            Unverified Extraction
+                          </span>
+                        ) : isScopeRestricted ? (
+                          <span className="text-[11px] font-medium text-slate-700 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded">
+                            Scope-Restricted Reference
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                            Verified Source
+                          </span>
+                        )}
                       </div>
+
                       <p className="text-sm text-slate-900 leading-relaxed">{finding.statement}</p>
+
+                      {isVerified && finding.sourceQuote && (
+                        <blockquote className="text-xs text-slate-700 bg-slate-50 border-l-2 border-teal-600 pl-3 pr-2.5 py-1.5 rounded-r">
+                          <span className="font-semibold text-slate-800">Original Source Text:</span>{' '}
+                          &ldquo;{finding.sourceQuote}&rdquo;
+                        </blockquote>
+                      )}
+
+                      {finding.explanation && (
+                        <p className="text-[11px] text-slate-500">{finding.explanation}</p>
+                      )}
+
                       {finding.uncertainty && (
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1 inline-block">
                           Uncertainty: {finding.uncertainty}
                         </p>
                       )}
                     </div>
-                    {isVerified ? (
-                      <button
-                        type="button"
-                        onClick={() => openCitation(finding.sourceRecordId)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap shrink-0 self-start"
-                      >
-                        <span>
-                          {finding.sourceRecordId} · {finding.sourceHospital}
+
+                    {isVerified && sourceRec ? (
+                      <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openCitation(finding.sourceRecordId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
+                        >
+                          <span>
+                            {finding.sourceRecordId} · {finding.sourceHospital}
+                          </span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                        <span className="text-[11px] text-slate-500">
+                          {isScopeRestricted
+                            ? 'Full PDF restricted by consent scope'
+                            : 'Open original permitted document'}
                         </span>
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
+                      </div>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-mono font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg whitespace-nowrap shrink-0 self-start">
                         Unverified Source
@@ -517,17 +582,30 @@ export const AiSummaryScreen: React.FC<AiSummaryScreenProps> = ({
               </div>
               <div className="space-y-3">
                 {summary.activeMedications.map((med, idx) => {
-                  const isVerified =
-                    med.citationVerified !== false &&
-                    accessibleRecords.some((r) => r.id === med.sourceRecordId);
+                  const sourceRec = accessibleRecords.find((r) => r.id === med.sourceRecordId);
+                  const isVerified = med.citationVerified !== false && Boolean(sourceRec);
                   return (
                     <div
                       key={idx}
                       className="rounded-lg border border-slate-200 p-3 flex items-start justify-between gap-3"
                     >
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">{med.medication}</div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {med.medication}
+                          </span>
+                          {med.evidenceStatus === 'unverified-extraction' && (
+                            <span className="text-[10px] font-medium text-amber-900 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded">
+                              Unverified Upload
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-600 mt-0.5">{med.context}</div>
+                        {isVerified && med.sourceQuote && (
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            Source entry: &ldquo;{med.sourceQuote}&rdquo;
+                          </div>
+                        )}
                       </div>
                       {isVerified ? (
                         <button

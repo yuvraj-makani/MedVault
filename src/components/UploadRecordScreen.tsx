@@ -75,11 +75,16 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
   const [hospital, setHospital] = useState('CityCare Hospital');
   const [customHospital, setCustomHospital] = useState('');
   const [clinician, setClinician] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState('');
+  const [dateUnknown, setDateUnknown] = useState(false);
+  const [dateUncertainty, setDateUncertainty] = useState<string | null>(null);
   const [summary, setSummary] = useState('');
   const [facts, setFacts] = useState<ExtractedFact[]>([]);
   const [medications, setMedications] = useState<string[]>([]);
   const [allergies, setAllergies] = useState<AllergyMention[]>([]);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [confirmedNegatives, setConfirmedNegatives] = useState<string[]>([]);
+  const [verificationFlags, setVerificationFlags] = useState<string[]>([]);
 
   const [extracting, setExtracting] = useState(false);
   const [extractionStatus, setExtractionStatus] = useState<
@@ -162,11 +167,29 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       setHospital(matched.selected);
       setCustomHospital(matched.custom);
       setClinician(draft.clinician);
-      setDate(draft.date);
+      if (draft.date && /^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+        setDate(draft.date);
+        setDateUnknown(false);
+        setDateUncertainty(null);
+      } else {
+        setDate('');
+        setDateUnknown(true);
+        setDateUncertainty(
+          draft.dateUncertainty ||
+            'Document date was missing or illegible — enter the date manually or keep "Date missing in document" checked.'
+        );
+      }
       setSummary(draft.summary);
       setFacts(Array.isArray(draft.facts) ? draft.facts : []);
       setMedications(Array.isArray(draft.medications) ? draft.medications : []);
       setAllergies(Array.isArray(draft.allergiesMentioned) ? draft.allergiesMentioned : []);
+      setMissingFields(Array.isArray(draft.missingFields) ? draft.missingFields : []);
+      setConfirmedNegatives(
+        Array.isArray(draft.confirmedNegatives) ? draft.confirmedNegatives : []
+      );
+      setVerificationFlags(
+        Array.isArray(draft.verificationFlags) ? draft.verificationFlags : []
+      );
       setExtractionNotes(draft.extractionNotes);
       setExtractionStatus('Extracted — Review Required');
     } catch (err) {
@@ -262,8 +285,10 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       return;
     }
     const resolvedHospital = hospital === 'Other Clinic / Lab' ? customHospital.trim() : hospital;
-    if (!title.trim() || !resolvedHospital || !date || !summary.trim()) {
-      setSubmitError('Please complete title, hospital, date, and clinical summary.');
+    if (!title.trim() || !resolvedHospital || (!date && !dateUnknown) || !summary.trim()) {
+      setSubmitError(
+        'Please complete title, hospital, document date (or mark "Date missing in document"), and clinical summary.'
+      );
       return;
     }
 
@@ -283,11 +308,21 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
     formData.append('category', category);
     formData.append('hospital', resolvedHospital);
     formData.append('clinician', clinician.trim() || 'Not specified');
-    formData.append('date', date);
+    formData.append('date', dateUnknown && !date ? 'Date Unknown' : date);
+    formData.append('dateStatus', dateUnknown && !date ? 'missing' : 'documented');
     formData.append('summary', summary.trim());
     formData.append('factsJson', JSON.stringify(validFacts));
     formData.append('medicationsJson', JSON.stringify(cleanMedications));
     formData.append('allergiesJson', JSON.stringify(cleanAllergies));
+    if (missingFields.length > 0) {
+      formData.append('missingFieldsJson', JSON.stringify(missingFields));
+    }
+    if (confirmedNegatives.length > 0) {
+      formData.append('confirmedNegativesJson', JSON.stringify(confirmedNegatives));
+    }
+    if (verificationFlags.length > 0) {
+      formData.append('verificationFlagsJson', JSON.stringify(verificationFlags));
+    }
     formData.append('extractionStatus', extractionStatus);
     if (extractionNotes.trim()) {
       formData.append('extractionNotes', extractionNotes.trim());
@@ -302,10 +337,16 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       setTitle('');
       setCustomHospital('');
       setClinician('');
+      setDate('');
+      setDateUnknown(false);
+      setDateUncertainty(null);
       setSummary('');
       setFacts([]);
       setMedications([]);
       setAllergies([]);
+      setMissingFields([]);
+      setConfirmedNegatives([]);
+      setVerificationFlags([]);
       setExtractionNotes('');
       setExtractionStatus('Manual Entry');
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -580,15 +621,39 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Document Date *
+                  Document Date {dateUnknown ? '(Missing)' : '*'}
                 </label>
                 <input
                   type="date"
-                  required
+                  required={!dateUnknown}
+                  disabled={dateUnknown}
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  onChange={(e) => {
+                    setDate(e.target.value);
+                    if (e.target.value) {
+                      setDateUnknown(false);
+                      setDateUncertainty(null);
+                    }
+                  }}
+                  className="w-full px-3.5 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:bg-slate-100 disabled:text-slate-400"
                 />
+                <label className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dateUnknown}
+                    onChange={(e) => {
+                      setDateUnknown(e.target.checked);
+                      if (e.target.checked) setDate('');
+                    }}
+                    className="rounded border-slate-300 text-teal-700 focus:ring-teal-600"
+                  />
+                  <span>Date missing or illegible in document</span>
+                </label>
+                {dateUncertainty && (
+                  <p className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    {dateUncertainty}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -702,6 +767,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                           <option value="high">high</option>
                           <option value="low">low</option>
                           <option value="critical">critical</option>
+                          <option value="unverified">unverified</option>
                         </select>
                         <button
                           type="button"
@@ -806,6 +872,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                           <option value="Mild">Mild</option>
                           <option value="Moderate">Moderate</option>
                           <option value="Severe">Severe</option>
+                          <option value="Unknown">Unknown (Verify)</option>
                         </select>
                         <button
                           type="button"
@@ -828,6 +895,35 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                 </div>
               )}
             </div>
+
+            {(missingFields.length > 0 || confirmedNegatives.length > 0 || verificationFlags.length > 0) && (
+              <div className="pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {(missingFields.length > 0 || verificationFlags.length > 0) && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 space-y-1">
+                    <div className="font-semibold text-amber-950">
+                      Missing / Ambiguous Fields Requiring Review
+                    </div>
+                    <ul className="space-y-0.5 text-amber-900 list-disc pl-4">
+                      {Array.from(new Set([...missingFields, ...verificationFlags])).map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {confirmedNegatives.length > 0 && (
+                  <div className="rounded-lg border border-teal-200 bg-teal-50/70 p-3 space-y-1">
+                    <div className="font-semibold text-teal-950">
+                      Confirmed Negative Findings in Document
+                    </div>
+                    <ul className="space-y-0.5 text-teal-900 list-disc pl-4">
+                      {confirmedNegatives.map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {submitError && (
               <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs text-rose-800">

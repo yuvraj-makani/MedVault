@@ -1,0 +1,35 @@
+name: MedVault AI Quality & Security Checks
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate-build-test:
+    name: Typecheck, Build, Security & AI Evaluation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript validation
+        run: npm run lint
+
+      - name: Production Vite build
+        run: npm run build
+
+      - name: Automated security & AI evaluation suite (offline deterministic)
+        env:
+          MEDVAULT_NO_LISTEN: '1'
+        run: npm test

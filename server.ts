@@ -52,13 +52,13 @@ interface TokenPayload {
   exp: number;
 }
 
-function signToken(payload: TokenPayload): string {
+export function signToken(payload: TokenPayload): string {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
-function verifyToken(token: string): TokenPayload | null {
+export function verifyToken(token: string): TokenPayload | null {
   const parts = token.split('.');
   if (parts.length !== 2) return null;
   const [body, sig] = parts;
@@ -116,7 +116,7 @@ function requireAuth(req: AuthedRequest, res: express.Response, next: express.Ne
   next();
 }
 
-function filterRecordsByScope(
+export function filterRecordsByScope(
   records: MedicalRecord[],
   scope: 'Full History' | 'Labs & Allergies Only'
 ): MedicalRecord[] {
@@ -142,7 +142,7 @@ function filterRecordsByScope(
   return result;
 }
 
-function isFileAccessibleUnderScope(
+export function isFileAccessibleUnderScope(
   record: MedicalRecord,
   scope: 'Full History' | 'Labs & Allergies Only'
 ): boolean {
@@ -187,7 +187,7 @@ const serverAiSummaryCache = new Map<
   }
 >();
 
-function buildSummaryCacheKey(params: {
+export function buildSummaryCacheKey(params: {
   doctorId: string;
   patientId: string;
   scope: string;
@@ -207,7 +207,7 @@ function buildSummaryCacheKey(params: {
     .digest('hex');
 }
 
-async function startServer() {
+export async function createMedVaultApp(options: { attachVite?: boolean } = {}): Promise<express.Express> {
   // Initialize seeded DB & private PDFs on startup
   await initDb();
 
@@ -456,14 +456,19 @@ async function startServer() {
       const title = (body.title ?? '').trim();
       const hospital = (body.hospital ?? '').trim();
       const clinician = (body.clinician ?? 'Not specified').trim();
-      const date = (body.date ?? '').trim();
+      const dateRaw = (body.date ?? '').trim();
+      const dateStatusRaw = (body.dateStatus ?? '').trim();
+      const isDateUnknown = dateRaw === 'Date Unknown' || (dateStatusRaw === 'missing' && !dateRaw);
+      const date = isDateUnknown ? 'Date Unknown' : dateRaw;
       const summary = (body.summary ?? '').trim();
       const categoryRaw = (body.category ?? 'Lab Report').trim();
       const extractionStatusRaw = (body.extractionStatus ?? 'Manual Entry').trim();
       const extractionNotes = (body.extractionNotes ?? '').trim();
 
-      if (!title || !hospital || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !summary) {
-        res.status(400).json({ error: 'Title, hospital, valid date (YYYY-MM-DD), and summary are required.' });
+      if (!title || !hospital || (!isDateUnknown && !/^\d{4}-\d{2}-\d{2}$/.test(date)) || !summary) {
+        res.status(400).json({
+          error: 'Title, hospital, valid date (YYYY-MM-DD or Date Unknown), and summary are required.',
+        });
         return;
       }
 
@@ -482,11 +487,17 @@ async function startServer() {
       let facts: MedicalRecord['facts'] = [];
       let medications: string[] = [];
       let allergiesMentioned: MedicalRecord['allergiesMentioned'] = [];
+      let missingFields: string[] | undefined;
+      let confirmedNegatives: string[] | undefined;
+      let verificationFlags: string[] | undefined;
 
       try {
         if (body.factsJson) facts = JSON.parse(body.factsJson);
         if (body.medicationsJson) medications = JSON.parse(body.medicationsJson);
         if (body.allergiesJson) allergiesMentioned = JSON.parse(body.allergiesJson);
+        if (body.missingFieldsJson) missingFields = JSON.parse(body.missingFieldsJson);
+        if (body.confirmedNegativesJson) confirmedNegatives = JSON.parse(body.confirmedNegativesJson);
+        if (body.verificationFlagsJson) verificationFlags = JSON.parse(body.verificationFlagsJson);
       } catch {
         res.status(400).json({ error: 'Malformed structured facts or allergy JSON.' });
         return;
@@ -520,10 +531,24 @@ async function startServer() {
         hospital,
         clinician: clinician || 'Not specified',
         date,
+        dateStatus: isDateUnknown
+          ? 'missing'
+          : dateStatusRaw === 'ambiguous'
+          ? 'ambiguous'
+          : 'documented',
         summary,
         facts: Array.isArray(facts) ? facts : [],
         medications: Array.isArray(medications) ? medications : [],
         allergiesMentioned: Array.isArray(allergiesMentioned) ? allergiesMentioned : [],
+        missingFields: Array.isArray(missingFields) && missingFields.length > 0 ? missingFields : undefined,
+        confirmedNegatives:
+          Array.isArray(confirmedNegatives) && confirmedNegatives.length > 0
+            ? confirmedNegatives
+            : undefined,
+        verificationFlags:
+          Array.isArray(verificationFlags) && verificationFlags.length > 0
+            ? verificationFlags
+            : undefined,
         fileName: req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'),
         mimeType: req.file.mimetype,
         fileSizeBytes: req.file.size,
@@ -572,7 +597,10 @@ async function startServer() {
       if (typeof body.title === 'string' && body.title.trim()) target.title = body.title.trim();
       if (typeof body.hospital === 'string' && body.hospital.trim()) target.hospital = body.hospital.trim();
       if (typeof body.clinician === 'string' && body.clinician.trim()) target.clinician = body.clinician.trim();
-      if (typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) target.date = body.date;
+      if (typeof body.date === 'string' && (/^\d{4}-\d{2}-\d{2}$/.test(body.date) || body.date === 'Date Unknown')) {
+        target.date = body.date;
+        target.dateStatus = body.date === 'Date Unknown' ? 'missing' : 'documented';
+      }
       if (typeof body.summary === 'string' && body.summary.trim()) target.summary = body.summary.trim();
       if (Array.isArray(body.facts)) target.facts = body.facts;
       if (Array.isArray(body.medications)) target.medications = body.medications;
@@ -974,6 +1002,7 @@ async function startServer() {
         patientName: db.patient.name,
         records: accessibleRecords,
         allergyDiscrepancyNote: resolutionText || undefined,
+        discrepancies,
       });
 
       serverAiSummaryCache.set(user.id, { cacheKey, summary });
@@ -1151,28 +1180,37 @@ async function startServer() {
     res.send(pdfBuffer);
   });
 
-  // Vite dev middleware vs production dist static serving
-  const isProd = process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(process.cwd(), 'dist'));
-  if (isProd) {
-    const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('*all', (_req, res) => {
-      res.sendFile(path.resolve(distDir, 'index.html'));
-    });
-  } else {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+  if (options.attachVite !== false) {
+    // Vite dev middleware vs production dist static serving
+    const isProd = process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(process.cwd(), 'dist'));
+    if (isProd) {
+      const distDir = path.resolve(process.cwd(), 'dist');
+      app.use(express.static(distDir));
+      app.get('*all', (_req, res) => {
+        res.sendFile(path.resolve(distDir, 'index.html'));
+      });
+    } else {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    }
   }
 
+  return app;
+}
+
+async function startServer() {
+  const app = await createMedVaultApp({ attachVite: true });
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`MedVault server listening on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start MedVault server:', err);
-  process.exit(1);
-});
+if (process.env.MEDVAULT_NO_LISTEN !== '1') {
+  startServer().catch((err) => {
+    console.error('Failed to start MedVault server:', err);
+    process.exit(1);
+  });
+}

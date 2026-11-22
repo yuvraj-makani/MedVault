@@ -32,6 +32,7 @@ export function recordsMatchOriginalSeed(records: MedicalRecord[]): boolean {
 interface SampleFindingTemplate {
   category: string;
   statement: string;
+  sourceQuote: string;
   sourceRecordId: string;
   uncertainty?: string;
   requiresFullRecord?: boolean;
@@ -41,6 +42,7 @@ interface SampleFindingTemplate {
 interface SampleMedicationTemplate {
   medication: string;
   context: string;
+  sourceQuote: string;
   sourceRecordId: string;
   requiresFullRecord?: boolean;
 }
@@ -50,12 +52,16 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Allergy & Drug Safety',
     statement:
       'Outpatient allergy intake documented mild localized forearm hives developing 6 hours after amoxicillin (Penicillin) therapy, resolved with oral cetirizine.',
+    sourceQuote:
+      'Patient reported localized forearm hives developing 6 hours post-dose; resolved with oral cetirizine.',
     sourceRecordId: 'REC-101',
   },
   {
     category: 'Allergy & Drug Safety',
     statement:
       'Urgent care presentation 25 minutes after beta-lactam exposure documented severe anaphylaxis with facial angioedema, bronchospasm, and hypotension (88/56 mmHg), stabilized with IM epinephrine and IV hydrocortisone.',
+    sourceQuote:
+      'Developed facial angioedema, wheezing, and hypotension; stabilized with IM epinephrine and IV hydrocortisone.',
     sourceRecordId: 'REC-104',
     requiresFullRecord: true,
     uncertainty:
@@ -65,6 +71,8 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Allergy Reference (Scoped)',
     statement:
       'Penicillin allergy documented with Severe severity (severe anaphylaxis with bronchospasm and facial angioedema; strict avoidance). Encounter details beyond allergy status are restricted under Labs & Allergies Only scope.',
+    sourceQuote:
+      'Penicillin (Severe): Severe anaphylaxis with bronchospasm and facial angioedema (strict avoidance)',
     sourceRecordId: 'REC-104',
     onlyWhenRedacted: true,
     uncertainty:
@@ -74,12 +82,16 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Glycemic & Renal Baseline',
     statement:
       'Annual metabolic lab panel showed borderline elevated HbA1c (6.1%) and fasting glucose (108 mg/dL) with normal renal function (creatinine 0.82 mg/dL, eGFR >90 mL/min/1.73m²).',
+    sourceQuote:
+      'HbA1c (6.1%) and fasting glucose (108 mg/dL) remain mildly elevated in pre-diabetic range. Renal function normal.',
     sourceRecordId: 'REC-102',
   },
   {
     category: 'Respiratory Imaging',
     statement:
       'Chest radiograph (PA) for post-viral cough showed clear lung fields and normal cardiac silhouette with mild bilateral maxillary sinus mucosal thickening (SpO2 99%).',
+    sourceQuote:
+      'Lung fields clear without consolidation or pleural effusion; mild bilateral maxillary sinus mucosal thickening.',
     sourceRecordId: 'REC-103',
     requiresFullRecord: true,
   },
@@ -87,12 +99,16 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Metabolic & Lipid Drift',
     statement:
       'Follow-up lab panel documented upward progression in HbA1c (6.4%) and fasting glucose (116 mg/dL) alongside borderline LDL cholesterol (134 mg/dL) and triglycerides (162 mg/dL).',
+    sourceQuote:
+      'Upward trend in HbA1c and fasting glucose compared to 2024 baseline; advised specialist follow-up for lifestyle and pharmacotherapy consideration.',
     sourceRecordId: 'REC-105',
   },
   {
     category: 'Endocrinology Plan & Vitamin D',
     statement:
       'Initiated low-dose Metformin monotherapy and weekly Vitamin D3 repletion after serum 25-OH Vitamin D measured low at 18 ng/mL (BP 122/78 mmHg, BMI 24.6 kg/m²).',
+    sourceQuote:
+      'Initiated low-dose Metformin monotherapy and weekly Vitamin D repletion after suboptimal response to diet/exercise alone.',
     sourceRecordId: 'REC-106',
     requiresFullRecord: true,
   },
@@ -100,12 +116,16 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Hematology & Thyroid Labs',
     statement:
       'Three-month glycemic check improved HbA1c to 6.0% and fasting glucose to 102 mg/dL, with mild low hemoglobin (11.8 g/dL) and normal TSH (3.1 mIU/L).',
+    sourceQuote:
+      'Glycemic indices improved 3 months after starting Metformin. Mild normocytic anemia identified; iron supplementation recommended.',
     sourceRecordId: 'REC-107',
   },
   {
     category: 'Surgical History',
     statement:
       'Underwent uncomplicated day-care laparoscopic appendectomy using penicillin-safe macrolide prophylaxis (Azithromycin 500mg); discharged afebrile (98.4 °F).',
+    sourceQuote:
+      'Uncomplicated laparoscopic appendectomy performed under general anesthesia. Penicillin-safe antibiotic prophylaxis selected due to documented anaphylaxis alert.',
     sourceRecordId: 'REC-108',
     requiresFullRecord: true,
   },
@@ -113,6 +133,8 @@ const SAMPLE_FINDINGS: SampleFindingTemplate[] = [
     category: 'Latest Cardiometabolic Lab',
     statement:
       'Most recent follow-up labs demonstrate normalized HbA1c (5.8%), fasting glucose (96 mg/dL), hemoglobin (12.6 g/dL), LDL cholesterol (112 mg/dL), and blood pressure (118/76 mmHg).',
+    sourceQuote:
+      'Sustained glycemic improvement (HbA1c 5.8%) and resolution of mild anemia. Patient reports good tolerance to Metformin 500mg.',
     sourceRecordId: 'REC-109',
   },
 ];
@@ -121,28 +143,33 @@ const SAMPLE_MEDICATIONS: SampleMedicationTemplate[] = [
   {
     medication: 'Metformin 500mg once daily with dinner',
     context: 'Documented in most recent metabolic follow-up for glycemic control (confirm active adherence with patient)',
+    sourceQuote: 'Metformin 500mg once daily with dinner',
     sourceRecordId: 'REC-109',
   },
   {
     medication: 'Elemental Iron + Folic Acid daily',
     context: 'Documented alongside hemoglobin 11.8 g/dL in Jan 2026 lab review (confirm whether ongoing)',
+    sourceQuote: 'Elemental Iron + Folic Acid daily (started)',
     sourceRecordId: 'REC-107',
   },
   {
     medication: 'Cholecalciferol (Vitamin D3) 60,000 IU weekly x 8 weeks',
     context: 'Prescribed Oct 2025 for 25-OH Vitamin D deficiency (18 ng/mL; confirm completion)',
+    sourceQuote: 'Cholecalciferol (Vitamin D3) 60,000 IU weekly x 8 weeks',
     sourceRecordId: 'REC-106',
     requiresFullRecord: true,
   },
   {
     medication: 'Azithromycin 500mg once daily x 3 days (completed) & Pantoprazole 40mg x 5 days (completed)',
     context: 'Short post-operative regimen at appendectomy discharge (May 2026)',
+    sourceQuote: 'Azithromycin 500mg once daily x 3 days (completed)',
     sourceRecordId: 'REC-108',
     requiresFullRecord: true,
   },
   {
     medication: 'Cetirizine 10mg PRN (completed)',
     context: 'Short-term symptomatic relief for 2024 amoxicillin-associated hives',
+    sourceQuote: 'Cetirizine 10mg PRN (completed)',
     sourceRecordId: 'REC-101',
   },
 ];
@@ -168,6 +195,11 @@ export function buildSampleAiSummary(params: {
       sourceDate: rec.date,
       uncertainty: item.uncertainty,
       citationVerified: true,
+      sourceQuote: item.sourceQuote,
+      evidenceStatus: rec.scopeRedacted ? 'scope-restricted' : 'verified-record',
+      explanation: rec.scopeRedacted
+        ? `Record ${rec.id} is restricted to documented allergy entries under "Labs & Allergies Only" scope.`
+        : `Verified against ${rec.id} (${rec.extractionStatus}) at ${rec.hospital}.`,
     });
   }
 
@@ -182,23 +214,39 @@ export function buildSampleAiSummary(params: {
       sourceRecordId: rec.id,
       sourceHospital: rec.hospital,
       citationVerified: true,
+      sourceQuote: med.sourceQuote,
+      evidenceStatus: 'verified-record',
     });
   }
 
-  const allergyConflicts: AISummaryResult['allergyConflicts'] = params.discrepancies.map((d) => ({
-    substance: d.substance,
-    conflictSummary: d.resolutionNote
-      ? `${d.entries.length} cross-hospital entries reconciled: ${d.resolutionNote}`
-      : `Conflicting ${d.substance} severity documented across facilities (${d.entries
-          .map((e) => `${e.hospital}: ${e.severity}`)
-          .join(' vs. ')}).`,
-    sourceRecordIds: d.entries
-      .map((e) => e.sourceRecordId)
-      .filter((id) => permittedMap.has(id)),
-    actionRequired: d.resolutionNote
-      ? `Verified by ${d.resolvedByDoctor ?? 'Physician'}`
-      : 'Confirm severe beta-lactam anaphylaxis risk directly with patient before prescribing.',
-  }));
+  const allergyConflicts: AISummaryResult['allergyConflicts'] = params.discrepancies.map((d) => {
+    const evidenceSnippets = d.entries
+      .filter((e) => permittedMap.has(e.sourceRecordId))
+      .map((e) => ({
+        recordId: e.sourceRecordId,
+        hospital: e.hospital,
+        severity: e.severity,
+        excerpt: `${e.substance} (${e.severity}): ${e.reaction}`,
+      }));
+    const conflictReason = `Conflicting severity levels recorded across care facilities for ${d.substance}: ${evidenceSnippets
+      .map((s) => `${s.recordId} (${s.hospital}) logged ${s.severity}`)
+      .join(' vs. ')}.`;
+
+    return {
+      substance: d.substance,
+      conflictSummary: d.resolutionNote
+        ? `${d.entries.length} cross-hospital entries reconciled: ${d.resolutionNote}`
+        : `Conflicting ${d.substance} severity documented across facilities (${d.entries
+            .map((e) => `${e.hospital}: ${e.severity}`)
+            .join(' vs. ')}).`,
+      conflictReason,
+      sourceRecordIds: evidenceSnippets.map((s) => s.recordId),
+      actionRequired: d.resolutionNote
+        ? `Verified by ${d.resolvedByDoctor ?? 'Physician'}`
+        : 'Confirm severe beta-lactam anaphylaxis risk directly with patient before prescribing.',
+      evidenceSnippets,
+    };
+  });
 
   const executiveBrief =
     params.scope === 'Full History'
