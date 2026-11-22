@@ -106,9 +106,10 @@ server/
 Clone your repository and install the dependencies:
 
 ```bash
-git clone <repository-url>
-cd medvault
+git clone https://github.com/yuvraj-makani/MedVault.git
+cd MedVault
 npm install
+npm run dev
 ```
 
 ### Environment Configuration
