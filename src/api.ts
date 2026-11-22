@@ -5,6 +5,7 @@ import type {
   AllergyEntry,
   AuthUser,
   ConsentGrant,
+  ConsentScope,
   ExtractionDraft,
   MedicalRecord,
   PatientProfile,
@@ -30,6 +31,23 @@ export class ApiError extends Error {
     this.status = status;
     this.data = data;
   }
+}
+
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return fallback;
+}
+
+async function parseBlobError(res: Response, fallback: string): Promise<ApiError> {
+  let errMsg = `${fallback} (${res.status})`;
+  try {
+    const json = (await res.json()) as { error?: string };
+    if (json.error) errMsg = json.error;
+  } catch {
+    // ignore non-JSON error body
+  }
+  return new ApiError(errMsg, res.status);
 }
 
 async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -126,14 +144,7 @@ export async function fetchSecureFileBlobUrl(
   }
   const res = await fetch(`/api/records/${encodeURIComponent(recordId)}/file`, { headers });
   if (!res.ok) {
-    let errMsg = `Unable to open private file (${res.status})`;
-    try {
-      const json = (await res.json()) as { error?: string };
-      if (json.error) errMsg = json.error;
-    } catch {
-      // ignore
-    }
-    throw new ApiError(errMsg, res.status);
+    throw await parseBlobError(res, 'Unable to open private file');
   }
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
@@ -149,7 +160,7 @@ export async function fetchConsents(): Promise<{
 
 export async function requestDoctorConsent(
   purpose: string,
-  scope: 'Full History' | 'Labs & Allergies Only'
+  scope: ConsentScope
 ): Promise<{ consent: ConsentGrant }> {
   return apiFetch('/api/consents/request', {
     method: 'POST',
@@ -160,7 +171,7 @@ export async function requestDoctorConsent(
 export async function updateConsent(
   consentId: string,
   status: 'approved' | 'revoked',
-  scope?: 'Full History' | 'Labs & Allergies Only'
+  scope?: ConsentScope
 ): Promise<{ consent: ConsentGrant }> {
   return apiFetch(`/api/consents/${encodeURIComponent(consentId)}`, {
     method: 'PATCH',
@@ -197,14 +208,7 @@ export async function downloadHealthPassportPdf(): Promise<void> {
   }
   const res = await fetch('/api/patient/health-passport', { headers });
   if (!res.ok) {
-    let errMsg = `Unable to generate Health Passport (${res.status})`;
-    try {
-      const json = (await res.json()) as { error?: string };
-      if (json.error) errMsg = json.error;
-    } catch {
-      // ignore
-    }
-    throw new ApiError(errMsg, res.status);
+    throw await parseBlobError(res, 'Unable to generate Health Passport');
   }
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);

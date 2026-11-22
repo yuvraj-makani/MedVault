@@ -4,22 +4,21 @@ import {
   ArrowRight,
   Building2,
   Calendar,
-  CheckCircle2,
-  Download,
   FileText,
-  Loader2,
   ShieldCheck,
   Upload,
 } from 'lucide-react';
-import { ApiError, downloadHealthPassportPdf } from '../api';
-import type {
-  AllergyDiscrepancy,
-  AllergyEntry,
-  ConsentGrant,
-  MedicalRecord,
-  PatientProfile,
+import {
+  KNOWN_HOSPITALS,
+  type AllergyDiscrepancy,
+  type AllergyEntry,
+  type ConsentGrant,
+  type MedicalRecord,
+  type PatientProfile,
 } from '../types';
+import { AllergyDiscrepancyCard } from './AllergyDiscrepancyCard';
 import { BiomarkerCharts } from './BiomarkerCharts';
+import { HealthPassportButton } from './HealthPassportButton';
 import type { WorkspaceScreen } from './LandingPage';
 
 interface PatientDashboardProps {
@@ -42,28 +41,11 @@ export const PatientDashboard: React.FC<PatientDashboardProps> = ({
   onNavigate,
 }) => {
   const [avatarError, setAvatarError] = useState(false);
-  const [exportingPassport, setExportingPassport] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-
-  const handleDownloadPassport = async () => {
-    setExportingPassport(true);
-    setExportError(null);
-    try {
-      await downloadHealthPassportPdf();
-    } catch (err) {
-      setExportError(
-        err instanceof ApiError ? err.message : 'Unable to export Portable Health Passport.'
-      );
-    } finally {
-      setExportingPassport(false);
-    }
-  };
 
   const hospitals = Array.from(new Set(records.map((r) => r.hospital)));
   const pendingConsents = consents.filter((c) => c.status === 'pending');
   const approvedConsents = consents.filter((c) => c.status === 'approved');
-
-  const findRecordById = (id: string) => records.find((r) => r.id === id);
 
   return (
     <div className="space-y-6">
@@ -108,19 +90,7 @@ export const PatientDashboard: React.FC<PatientDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 min-w-0 max-w-full">
-          <button
-            type="button"
-            disabled={exportingPassport}
-            onClick={() => void handleDownloadPassport()}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
-          >
-            {exportingPassport ? (
-              <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
-            ) : (
-              <Download className="w-4 h-4 text-teal-700" />
-            )}
-            <span>{exportingPassport ? 'Generating PDF...' : 'Download Health Passport'}</span>
-          </button>
+          <HealthPassportButton onError={setExportError} />
           <button
             type="button"
             onClick={() => onNavigate('consents')}
@@ -141,92 +111,13 @@ export const PatientDashboard: React.FC<PatientDashboardProps> = ({
 
       {/* Allergy Discrepancy Alert (Always visible if conflicting records exist) */}
       {discrepancies.map((disc) => (
-        <div
+        <AllergyDiscrepancyCard
           key={disc.substance}
-          className={`rounded-xl border p-5 ${
-            disc.requiresVerification
-              ? 'border-amber-300 bg-amber-50/80'
-              : 'border-teal-200 bg-teal-50/50'
-          }`}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              {disc.requiresVerification ? (
-                <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-base font-bold text-slate-900">
-                    Conflicting Allergy Record Detected: {disc.substance}
-                  </h2>
-                  <span
-                    className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                      disc.requiresVerification
-                        ? 'bg-amber-200/70 text-amber-950'
-                        : 'bg-teal-100 text-teal-900'
-                    }`}
-                  >
-                    {disc.requiresVerification ? 'Flagged for Doctor Verification' : 'Physician Verified'}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-700 mt-1">
-                  Two hospitals recorded different severity levels for{' '}
-                  <strong>{disc.substance}</strong>. Both entries are preserved below for clinician
-                  reconciliation.
-                </p>
-
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {disc.entries.map((entry) => {
-                    const sourceRec = findRecordById(entry.sourceRecordId);
-                    return (
-                      <div
-                        key={entry.id}
-                        className="rounded-lg border border-slate-200 bg-white p-3.5 text-sm"
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-semibold text-slate-900">{entry.hospital}</span>
-                          <span
-                            className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                              entry.severity === 'Severe'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {entry.severity}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-600">{entry.reaction}</p>
-                        <div className="mt-2 flex items-center justify-between text-xs text-slate-500 font-mono tabular-nums">
-                          <span>{entry.recordedAt}</span>
-                          {sourceRec && (
-                            <button
-                              type="button"
-                              onClick={() => onSelectRecord(sourceRec)}
-                              className="text-teal-700 font-semibold hover:underline"
-                            >
-                              Inspect {entry.sourceRecordId}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {disc.resolutionNote && (
-                  <div className="mt-3 rounded-lg border border-teal-200 bg-white px-3.5 py-2.5 text-xs text-slate-700">
-                    <span className="font-semibold text-teal-800">
-                      Verified by {disc.resolvedByDoctor}:
-                    </span>{' '}
-                    {disc.resolutionNote}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+          discrepancy={disc}
+          records={records}
+          variant="patient"
+          onSelectRecord={onSelectRecord}
+        />
       ))}
 
       {/* Summary KPI Row */}
@@ -271,7 +162,7 @@ export const PatientDashboard: React.FC<PatientDashboardProps> = ({
 
       {/* Connected Hospitals Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {['CityCare Hospital', 'Sunrise Medical Center', 'Metro Health Clinic'].map((hosp) => {
+        {KNOWN_HOSPITALS.map((hosp) => {
           const hospRecords = records.filter((r) => r.hospital === hosp);
           const latest = hospRecords[0];
           return (

@@ -2,15 +2,13 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
-  Download,
   FileText,
-  Loader2,
   Search,
   ShieldAlert,
   Upload,
 } from 'lucide-react';
-import { ApiError, downloadHealthPassportPdf } from '../api';
-import type { MedicalRecord } from '../types';
+import { compareRecordDates, type MedicalRecord } from '../types';
+import { HealthPassportButton } from './HealthPassportButton';
 
 interface TimelineScreenProps {
   records: MedicalRecord[];
@@ -28,22 +26,7 @@ export const TimelineScreen: React.FC<TimelineScreenProps> = ({
   const [search, setSearch] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [exportingPassport, setExportingPassport] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-
-  const handleDownloadPassport = async () => {
-    setExportingPassport(true);
-    setExportError(null);
-    try {
-      await downloadHealthPassportPdf();
-    } catch (err) {
-      setExportError(
-        err instanceof ApiError ? err.message : 'Unable to export Portable Health Passport.'
-      );
-    } finally {
-      setExportingPassport(false);
-    }
-  };
 
   const hospitals = useMemo(
     () => ['All', ...Array.from(new Set(records.map((r) => r.hospital)))],
@@ -77,7 +60,7 @@ export const TimelineScreen: React.FC<TimelineScreenProps> = ({
           .toLowerCase();
         return haystack.includes(q);
       })
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => compareRecordDates(a, b, 'desc'));
   }, [records, hospitalFilter, categoryFilter, search]);
 
   return (
@@ -92,21 +75,7 @@ export const TimelineScreen: React.FC<TimelineScreenProps> = ({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 min-w-0 max-w-full">
-          {canUpload && (
-            <button
-              type="button"
-              disabled={exportingPassport}
-              onClick={() => void handleDownloadPassport()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
-            >
-              {exportingPassport ? (
-                <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
-              ) : (
-                <Download className="w-4 h-4 text-teal-700" />
-              )}
-              <span>{exportingPassport ? 'Generating PDF...' : 'Download Health Passport'}</span>
-            </button>
-          )}
+          {canUpload && <HealthPassportButton onError={setExportError} />}
           {canUpload && onGoUpload && (
             <button
               type="button"

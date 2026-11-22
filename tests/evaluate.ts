@@ -57,6 +57,7 @@ async function main() {
     createMedVaultApp,
     filterRecordsByScope,
   } = await import('../server.js');
+  const { buildSummaryRecordSignature, compareRecordDates } = await import('../src/types.js');
 
   await initDb();
   await resetDemoDb();
@@ -508,11 +509,173 @@ async function main() {
 
       return 'Pending and revoked doctors blocked with HTTP 403 across overview, live AI summary, sample summary, and file routes.';
     });
+
+    // -----------------------------------------------------------------------
+    // CASE 12: Authorized access, scoped PDF files, Health Passport PDF, Sample AI & verify validation
+    // -----------------------------------------------------------------------
+    await recordCase(12, 'Authorized records, Health Passport PDF, scoped files & sample AI fallback', 'security-http', async () => {
+      await resetDemoDb();
+      const patientAuth = await reqJson(baseUrl, '/api/auth/demo-session', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ role: 'patient' }),
+      });
+      const pToken = String(patientAuth.json.token);
+
+      const vikramAuth = await reqJson(baseUrl, '/api/auth/demo-session', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ role: 'doctor', doctorId: 'doc-vikram' }),
+      });
+      const vToken = String(vikramAuth.json.token);
+
+      // 1. Authorized patient & approved doctor can read records
+      const pRecords = await reqJson(baseUrl, '/api/records', pToken);
+      assert.equal(pRecords.status, 200);
+      assert.equal((pRecords.json.records as unknown[]).length, 9);
+
+      const vRecordsFull = await reqJson(baseUrl, '/api/records', vToken);
+      assert.equal(vRecordsFull.status, 200);
+      assert.equal((vRecordsFull.json.records as unknown[]).length, 9);
+
+      // 2. Patient exports Health Passport PDF (doctor receives HTTP 403)
+      const docPassportRes = await fetch(`${baseUrl}/api/patient/health-passport`, {
+        headers: { Authorization: `Bearer ${vToken}` },
+      });
+      assert.equal(docPassportRes.status, 403);
+
+      const passportRes = await fetch(`${baseUrl}/api/patient/health-passport`, {
+        headers: { Authorization: `Bearer ${pToken}` },
+      });
+      assert.equal(passportRes.status, 200);
+      assert.equal(passportRes.headers.get('content-type'), 'application/pdf');
+      assert.equal(passportRes.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(passportRes.headers.get('cache-control'), 'no-store');
+      const passportBytes = new Uint8Array(await passportRes.arrayBuffer());
+      const passportHeader = Buffer.from(passportBytes.slice(0, 5)).toString('ascii');
+      assert.equal(passportHeader, '%PDF-');
+      assert.ok(passportBytes.byteLength > 1500, 'Health Passport PDF should contain real generated content');
+
+      // 3. Restrict Dr. Vikram to Labs & Allergies Only and verify file/summary scope enforcement
+      const restrictRes = await reqJson(baseUrl, '/api/consents/CON-201', pToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'approved', scope: 'Labs & Allergies Only' }),
+      });
+      assert.equal(restrictRes.status, 200);
+
+      const vRecordsScoped = await reqJson(baseUrl, '/api/records', vToken);
+      assert.equal(vRecordsScoped.status, 200);
+      assert.equal((vRecordsScoped.json.records as unknown[]).length, 6);
+
+      // Consultation PDF REC-104 must be blocked under Labs & Allergies Only, while Lab PDF REC-102 works
+      const restrictedPdfRes = await fetch(`${baseUrl}/api/records/REC-104/file`, {
+        headers: { Authorization: `Bearer ${vToken}` },
+      });
+      assert.equal(restrictedPdfRes.status, 403);
+
+      const labPdfRes = await fetch(`${baseUrl}/api/records/REC-102/file`, {
+        headers: { Authorization: `Bearer ${vToken}` },
+      });
+      assert.equal(labPdfRes.status, 200);
+      const labBytes = new Uint8Array(await labPdfRes.arrayBuffer());
+      assert.equal(Buffer.from(labBytes.slice(0, 5)).toString('ascii'), '%PDF-');
+
+      // Sample AI summary succeeds on unmodified seeded records with valid citations & no leaked text
+      const sampleOk = await reqJson(baseUrl, '/api/doctor/ai-summary/sample', vToken, {
+        method: 'POST',
+      });
+      assert.equal(sampleOk.status, 200);
+      const sampleSummary = sampleOk.json.summary as AISummaryResult;
+      assert.equal(sampleSummary.isSampleDemo, true);
+      assert.ok(sampleSummary.keyFindings.every((f) => f.citationVerified === true));
+      assert.equal(JSON.stringify(sampleSummary).includes('epinephrine'), false);
+
+      // 4. Upload a new undated record with sanitized verify step & ensure sample fallback returns 409
+      const { buildSyntheticClinicalPdf } = await import('../server/pdfGen.js');
+      const uploadPdf = await buildSyntheticClinicalPdf({
+        recordId: 'UPLOAD-EVAL',
+        patientName: 'Ananya Sharma',
+        medvaultId: 'MV-IND-4082',
+        dob: '1994-05-14',
+        hospital: 'CityCare Hospital',
+        clinician: 'Dr. Kavita Rao',
+        category: 'Lab Report',
+        date: 'Date Unknown',
+        title: 'Undated Vitamin B12 Check',
+        summary: 'Vitamin B12 measured 310 pg/mL on smudged printout.',
+        facts: [{ label: 'Vitamin B12', value: '310', unit: 'pg/mL', flag: 'normal' }],
+        medications: [],
+        allergies: [],
+      });
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array(uploadPdf)], { type: 'application/pdf' }), 'b12.pdf');
+      form.append('title', 'Undated Vitamin B12 Check');
+      form.append('category', 'Lab Report');
+      form.append('hospital', 'CityCare Hospital');
+      form.append('date', 'Date Unknown');
+      form.append('dateStatus', 'missing');
+      form.append('summary', 'Vitamin B12 measured 310 pg/mL.');
+      form.append('extractionStatus', 'Extracted — Review Required');
+
+      const uploadRes = await reqJson(baseUrl, '/api/records', pToken, {
+        method: 'POST',
+        body: form,
+      });
+      assert.equal(uploadRes.status, 201);
+      const uploadedRec = uploadRes.json.record as MedicalRecord;
+      assert.equal(uploadedRec.date, 'Date Unknown');
+      assert.equal(uploadedRec.dateStatus, 'missing');
+
+      const verifyRes = await reqJson(baseUrl, `/api/records/${uploadedRec.id}/verify`, pToken, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          allergiesMentioned: [{ substance: 'Latex', severity: 'invalid-sev', reaction: '' }],
+          facts: [{ label: 'Vitamin B12', value: '310', unit: 'pg/mL', flag: 'normal' }, { label: '', value: 'bad' }],
+        }),
+      });
+      assert.equal(verifyRes.status, 200);
+      const verifiedRec = verifyRes.json.record as MedicalRecord;
+      assert.equal(verifiedRec.extractionStatus, 'Verified by Patient');
+      assert.equal(verifiedRec.allergiesMentioned[0]?.severity, 'Unknown');
+      assert.equal(verifiedRec.facts.length, 1);
+
+      // Sample fallback must refuse to masquerade as current once records diverge from seed
+      const staleSample = await reqJson(baseUrl, '/api/doctor/ai-summary/sample', vToken, {
+        method: 'POST',
+      });
+      assert.equal(staleSample.status, 409);
+
+      return 'Verified authorized records, Health Passport PDF (%PDF-), scoped file access, sample fallback + 409 guard, and sanitized verify.';
+    });
   } finally {
     // Restore clean seeded database state & close ephemeral server
     await resetDemoDb();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+
+  // -------------------------------------------------------------------------
+  // CASE 13: Shared chronological sorting & cache signature stability
+  // -------------------------------------------------------------------------
+  await recordCase(13, 'Chronological date sort & order-independent cache signature', 'deterministic', () => {
+    const db = getDb();
+    const undated: MedicalRecord = {
+      ...db.records[0],
+      id: 'REC-990',
+      date: 'Date Unknown',
+      dateStatus: 'missing',
+      createdAt: '2024-06-01T12:00:00.000Z',
+    };
+    const newer: MedicalRecord = {
+      ...db.records[8],
+      id: 'REC-109',
+      date: '2026-09-10',
+    };
+    const sorted = [undated, newer].sort((a, b) => compareRecordDates(a, b, 'desc'));
+    assert.equal(sorted[0].id, 'REC-109', 'Valid 2026 date must sort ahead of 2024 undated record');
+
+    const sigA = buildSummaryRecordSignature([db.records[0], db.records[1]], []);
+    const sigB = buildSummaryRecordSignature([db.records[1], db.records[0]], []);
+    assert.equal(sigA, sigB, 'Summary cache signature must be independent of record ordering');
+    return 'Undated records sort via createdAt fallback and cache signatures remain order-independent.';
+  });
 
   // -------------------------------------------------------------------------
   // CASE 10: Malicious instructions embedded inside document / note text

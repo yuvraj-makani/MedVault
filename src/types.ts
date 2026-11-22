@@ -74,6 +74,53 @@ export interface AllergyDiscrepancy {
   resolvedAt?: string;
 }
 
+export type ConsentScope = 'Full History' | 'Labs & Allergies Only';
+
+export const RECORD_CATEGORIES: readonly RecordCategory[] = [
+  'Lab Report',
+  'Consultation',
+  'Prescription',
+  'Imaging',
+  'Discharge Summary',
+  'Allergy & Immunization',
+] as const;
+
+export const KNOWN_HOSPITALS: readonly string[] = [
+  'CityCare Hospital',
+  'Sunrise Medical Center',
+  'Metro Health Clinic',
+] as const;
+
+export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function compareRecordDates(
+  a: Pick<MedicalRecord, 'date' | 'createdAt'>,
+  b: Pick<MedicalRecord, 'date' | 'createdAt'>,
+  order: 'asc' | 'desc' = 'desc'
+): number {
+  const aKey = ISO_DATE_RE.test(a.date) ? a.date : a.createdAt.slice(0, 10);
+  const bKey = ISO_DATE_RE.test(b.date) ? b.date : b.createdAt.slice(0, 10);
+  return order === 'desc' ? bKey.localeCompare(aKey) : aKey.localeCompare(bKey);
+}
+
+export function buildSummaryRecordSignature(
+  records: Pick<MedicalRecord, 'id' | 'extractionStatus' | 'date' | 'summary' | 'facts' | 'allergiesMentioned'>[],
+  discrepancies: Pick<AllergyDiscrepancy, 'substance' | 'resolvedAt'>[]
+): string {
+  const recSig = [...records]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(
+      (r) =>
+        `${r.id}:${r.extractionStatus}:${r.date}:${r.summary.length}:${r.facts.length}:${r.allergiesMentioned.length}`
+    )
+    .join('|');
+  const discSig = [...discrepancies]
+    .sort((a, b) => a.substance.localeCompare(b.substance))
+    .map((d) => `${d.substance}:${d.resolvedAt ?? 'unverified'}`)
+    .join('|');
+  return `${recSig}::${discSig}`;
+}
+
 export interface ConsentGrant {
   id: string;
   patientId: string;
@@ -82,7 +129,7 @@ export interface ConsentGrant {
   doctorSpecialty: string;
   doctorHospital: string;
   purpose: string;
-  scope: 'Full History' | 'Labs & Allergies Only';
+  scope: ConsentScope;
   status: 'pending' | 'approved' | 'revoked';
   requestedAt: string;
   updatedAt: string;

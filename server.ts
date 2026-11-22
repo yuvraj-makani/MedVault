@@ -5,8 +5,26 @@ import fs from 'fs';
 import multer from 'multer';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import type { AISummaryResult, AuthUser, MedicalRecord, RecordCategory } from './src/types.js';
-import { extractMedicalDocument, generateDoctorSummary, isAiConfigured } from './server/gemini.js';
+import {
+  ISO_DATE_RE,
+  RECORD_CATEGORIES,
+  buildSummaryRecordSignature,
+  compareRecordDates,
+  type AISummaryResult,
+  type AllergyMention,
+  type AuthUser,
+  type ConsentGrant,
+  type ConsentScope,
+  type ExtractedFact,
+  type MedicalRecord,
+  type RecordCategory,
+} from './src/types.js';
+import {
+  extractMedicalDocument,
+  generateDoctorSummary,
+  isAiConfigured,
+  normalizeAllergySeverity,
+} from './server/gemini.js';
 import { buildHealthPassportPdf, buildSyntheticClinicalPdf } from './server/pdfGen.js';
 import { buildSampleAiSummary, recordsMatchOriginalSeed } from './server/sampleSummary.js';
 import {
@@ -118,7 +136,7 @@ function requireAuth(req: AuthedRequest, res: express.Response, next: express.Ne
 
 export function filterRecordsByScope(
   records: MedicalRecord[],
-  scope: 'Full History' | 'Labs & Allergies Only'
+  scope: ConsentScope
 ): MedicalRecord[] {
   if (scope === 'Full History') return records;
   const result: MedicalRecord[] = [];
@@ -144,10 +162,136 @@ export function filterRecordsByScope(
 
 export function isFileAccessibleUnderScope(
   record: MedicalRecord,
-  scope: 'Full History' | 'Labs & Allergies Only'
+  scope: ConsentScope
 ): boolean {
   if (scope === 'Full History') return true;
   return record.category === 'Lab Report' || record.category === 'Allergy & Immunization';
+}
+
+function parseFriendlyAiError(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : fallback;
+  try {
+    const parsed = JSON.parse(raw) as { error?: { message?: string } };
+    if (parsed?.error?.message) {
+      return parsed.error.message.split('\n')[0].trim();
+    }
+  } catch {
+    // keep raw message
+  }
+  return raw;
+}
+
+function sanitizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+const VALID_FACT_FLAGS = new Set<NonNullable<ExtractedFact['flag']>>([
+  'normal',
+  'borderline',
+  'high',
+  'low',
+  'critical',
+  'unverified',
+]);
+
+function sanitizeFacts(raw: unknown): ExtractedFact[] {
+  if (!Array.isArray(raw)) return [];
+  const facts: ExtractedFact[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Partial<ExtractedFact>;
+    const label = typeof obj.label === 'string' ? obj.label.trim() : '';
+    const value = typeof obj.value === 'string' ? obj.value.trim() : '';
+    if (!label || !value) continue;
+    const unit = typeof obj.unit === 'string' && obj.unit.trim() ? obj.unit.trim() : undefined;
+    const flag =
+      typeof obj.flag === 'string' && VALID_FACT_FLAGS.has(obj.flag as NonNullable<ExtractedFact['flag']>)
+        ? (obj.flag as ExtractedFact['flag'])
+        : 'normal';
+    const uncertainty =
+      typeof obj.uncertainty === 'string' && obj.uncertainty.trim()
+        ? obj.uncertainty.trim()
+        : undefined;
+    facts.push({
+      label,
+      value,
+      unit,
+      flag,
+      uncertainty,
+      verificationRequired: obj.verificationRequired ? true : undefined,
+    });
+  }
+  return facts;
+}
+
+function sanitizeAllergies(raw: unknown): AllergyMention[] {
+  if (!Array.isArray(raw)) return [];
+  const allergies: AllergyMention[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Partial<AllergyMention>;
+    const substance = typeof obj.substance === 'string' ? obj.substance.trim() : '';
+    if (!substance) continue;
+    const reaction =
+      typeof obj.reaction === 'string' && obj.reaction.trim()
+        ? obj.reaction.trim()
+        : 'Reported in uploaded record';
+    allergies.push({
+      substance,
+      severity: normalizeAllergySeverity(obj.severity),
+      reaction,
+    });
+  }
+  return allergies;
+}
+
+function getApprovedDoctorConsentOrDeny(params: {
+  user: AuthUser;
+  res: express.Response;
+  targetId: string;
+  deniedDetail: (consentStatus: string) => string;
+  errorMessage: string;
+  includePatientName?: boolean;
+  includeConsentObject?: boolean;
+  clearSummaryCache?: boolean;
+}): ConsentGrant | null {
+  const db = getDb();
+  const consent = db.consents.find((c) => c.doctorId === params.user.id);
+  if (consent && consent.status === 'approved') {
+    return consent;
+  }
+
+  if (params.clearSummaryCache) {
+    serverAiSummaryCache.delete(params.user.id);
+  }
+  mutateDb((draft) => {
+    appendAccessLog(draft, {
+      actorId: params.user.id,
+      actorName: params.user.name,
+      actorRole: params.user.role,
+      action: 'ACCESS_DENIED',
+      targetId: params.targetId,
+      outcome: 'DENIED',
+      detail: params.deniedDetail(consent?.status ?? 'none'),
+    });
+  });
+
+  const payload: Record<string, unknown> = {
+    error: params.errorMessage,
+    consentStatus: consent?.status ?? 'none',
+  };
+  if (params.includeConsentObject) {
+    payload.consent = consent ?? null;
+  }
+  if (params.includePatientName) {
+    payload.patientName = db.patient.name;
+  }
+  params.res.status(403).json(payload);
+  return null;
 }
 
 const aiRateLimitMap = new Map<string, number[]>();
@@ -195,15 +339,10 @@ export function buildSummaryCacheKey(params: {
   records: MedicalRecord[];
   discrepancies: ReturnType<typeof computeAllergiesAndDiscrepancies>['discrepancies'];
 }): string {
-  const recSig = params.records
-    .map((r) => `${r.id}:${r.extractionStatus}:${r.date}:${r.summary.length}`)
-    .join('|');
-  const discSig = params.discrepancies
-    .map((d) => `${d.substance}:${d.resolvedAt ?? 'unverified'}`)
-    .join('|');
+  const signature = buildSummaryRecordSignature(params.records, params.discrepancies);
   return crypto
     .createHash('sha256')
-    .update(`${params.doctorId}::${params.patientId}::${params.scope}::${params.consentUpdatedAt}::${recSig}::${discSig}`)
+    .update(`${params.doctorId}::${params.patientId}::${params.scope}::${params.consentUpdatedAt}::${signature}`)
     .digest('hex');
 }
 
@@ -288,7 +427,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
 
     const db = getDb();
     const { entries, discrepancies } = computeAllergiesAndDiscrepancies(db);
-    const sortedRecords = [...db.records].sort((a, b) => b.date.localeCompare(a.date));
+    const sortedRecords = [...db.records].sort((a, b) => compareRecordDates(a, b, 'desc'));
 
     res.json({
       patient: db.patient,
@@ -307,34 +446,23 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
     const db = getDb();
 
     if (user.role === 'patient') {
-      const sorted = [...db.records].sort((a, b) => b.date.localeCompare(a.date));
+      const sorted = [...db.records].sort((a, b) => compareRecordDates(a, b, 'desc'));
       res.json({ records: sorted });
       return;
     }
 
-    const consent = db.consents.find((c) => c.doctorId === user.id);
-    if (!consent || consent.status !== 'approved') {
-      mutateDb((draft) => {
-        appendAccessLog(draft, {
-          actorId: user.id,
-          actorName: user.name,
-          actorRole: user.role,
-          action: 'ACCESS_DENIED',
-          targetId: 'RECORDS_LIST',
-          outcome: 'DENIED',
-          detail: `Blocked records query by ${user.name} (consent status: ${consent?.status ?? 'none'}).`,
-        });
-      });
-      res.status(403).json({
-        error: 'Patient consent is required to access medical records.',
-        consentStatus: consent?.status ?? 'none',
-        consent,
-      });
-      return;
-    }
+    const consent = getApprovedDoctorConsentOrDeny({
+      user,
+      res,
+      targetId: 'RECORDS_LIST',
+      deniedDetail: (status) => `Blocked records query by ${user.name} (consent status: ${status}).`,
+      errorMessage: 'Patient consent is required to access medical records.',
+      includeConsentObject: true,
+    });
+    if (!consent) return;
 
     const accessible = filterRecordsByScope(db.records, consent.scope).sort((a, b) =>
-      b.date.localeCompare(a.date)
+      compareRecordDates(a, b, 'desc')
     );
     res.json({ records: accessible, scope: consent.scope });
   });
@@ -416,16 +544,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
         });
         res.json({ draft });
       } catch (aiErr) {
-        const raw = aiErr instanceof Error ? aiErr.message : 'Gemini extraction failed.';
-        let friendly = raw;
-        try {
-          const parsedErr = JSON.parse(raw) as { error?: { message?: string } };
-          if (parsedErr?.error?.message) {
-            friendly = parsedErr.error.message.split('\n')[0].trim();
-          }
-        } catch {
-          // keep raw message
-        }
+        const friendly = parseFriendlyAiError(aiErr, 'Gemini extraction failed.');
         res.status(502).json({
           aiUnavailable: true,
           error: `Document extraction could not complete (${friendly}). You can retry or enter record details manually and save this file securely.`,
@@ -465,22 +584,14 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       const extractionStatusRaw = (body.extractionStatus ?? 'Manual Entry').trim();
       const extractionNotes = (body.extractionNotes ?? '').trim();
 
-      if (!title || !hospital || (!isDateUnknown && !/^\d{4}-\d{2}-\d{2}$/.test(date)) || !summary) {
+      if (!title || !hospital || (!isDateUnknown && !ISO_DATE_RE.test(date)) || !summary) {
         res.status(400).json({
           error: 'Title, hospital, valid date (YYYY-MM-DD or Date Unknown), and summary are required.',
         });
         return;
       }
 
-      const validCategories: RecordCategory[] = [
-        'Lab Report',
-        'Consultation',
-        'Prescription',
-        'Imaging',
-        'Discharge Summary',
-        'Allergy & Immunization',
-      ];
-      const category: RecordCategory = validCategories.includes(categoryRaw as RecordCategory)
+      const category: RecordCategory = RECORD_CATEGORIES.includes(categoryRaw as RecordCategory)
         ? (categoryRaw as RecordCategory)
         : 'Lab Report';
 
@@ -492,12 +603,16 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       let verificationFlags: string[] | undefined;
 
       try {
-        if (body.factsJson) facts = JSON.parse(body.factsJson);
-        if (body.medicationsJson) medications = JSON.parse(body.medicationsJson);
-        if (body.allergiesJson) allergiesMentioned = JSON.parse(body.allergiesJson);
-        if (body.missingFieldsJson) missingFields = JSON.parse(body.missingFieldsJson);
-        if (body.confirmedNegativesJson) confirmedNegatives = JSON.parse(body.confirmedNegativesJson);
-        if (body.verificationFlagsJson) verificationFlags = JSON.parse(body.verificationFlagsJson);
+        if (body.factsJson) facts = sanitizeFacts(JSON.parse(body.factsJson));
+        if (body.medicationsJson) medications = sanitizeStringList(JSON.parse(body.medicationsJson));
+        if (body.allergiesJson) allergiesMentioned = sanitizeAllergies(JSON.parse(body.allergiesJson));
+        if (body.missingFieldsJson) missingFields = sanitizeStringList(JSON.parse(body.missingFieldsJson));
+        if (body.confirmedNegativesJson) {
+          confirmedNegatives = sanitizeStringList(JSON.parse(body.confirmedNegativesJson));
+        }
+        if (body.verificationFlagsJson) {
+          verificationFlags = sanitizeStringList(JSON.parse(body.verificationFlagsJson));
+        }
       } catch {
         res.status(400).json({ error: 'Malformed structured facts or allergy JSON.' });
         return;
@@ -537,18 +652,14 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
           ? 'ambiguous'
           : 'documented',
         summary,
-        facts: Array.isArray(facts) ? facts : [],
-        medications: Array.isArray(medications) ? medications : [],
-        allergiesMentioned: Array.isArray(allergiesMentioned) ? allergiesMentioned : [],
-        missingFields: Array.isArray(missingFields) && missingFields.length > 0 ? missingFields : undefined,
+        facts,
+        medications,
+        allergiesMentioned,
+        missingFields: missingFields && missingFields.length > 0 ? missingFields : undefined,
         confirmedNegatives:
-          Array.isArray(confirmedNegatives) && confirmedNegatives.length > 0
-            ? confirmedNegatives
-            : undefined,
+          confirmedNegatives && confirmedNegatives.length > 0 ? confirmedNegatives : undefined,
         verificationFlags:
-          Array.isArray(verificationFlags) && verificationFlags.length > 0
-            ? verificationFlags
-            : undefined,
+          verificationFlags && verificationFlags.length > 0 ? verificationFlags : undefined,
         fileName: req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'),
         mimeType: req.file.mimetype,
         fileSizeBytes: req.file.size,
@@ -597,14 +708,22 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       if (typeof body.title === 'string' && body.title.trim()) target.title = body.title.trim();
       if (typeof body.hospital === 'string' && body.hospital.trim()) target.hospital = body.hospital.trim();
       if (typeof body.clinician === 'string' && body.clinician.trim()) target.clinician = body.clinician.trim();
-      if (typeof body.date === 'string' && (/^\d{4}-\d{2}-\d{2}$/.test(body.date) || body.date === 'Date Unknown')) {
+      if (
+        typeof body.category === 'string' &&
+        RECORD_CATEGORIES.includes(body.category as RecordCategory)
+      ) {
+        target.category = body.category as RecordCategory;
+      }
+      if (typeof body.date === 'string' && (ISO_DATE_RE.test(body.date) || body.date === 'Date Unknown')) {
         target.date = body.date;
         target.dateStatus = body.date === 'Date Unknown' ? 'missing' : 'documented';
       }
       if (typeof body.summary === 'string' && body.summary.trim()) target.summary = body.summary.trim();
-      if (Array.isArray(body.facts)) target.facts = body.facts;
-      if (Array.isArray(body.medications)) target.medications = body.medications;
-      if (Array.isArray(body.allergiesMentioned)) target.allergiesMentioned = body.allergiesMentioned;
+      if (Array.isArray(body.facts)) target.facts = sanitizeFacts(body.facts);
+      if (Array.isArray(body.medications)) target.medications = sanitizeStringList(body.medications);
+      if (Array.isArray(body.allergiesMentioned)) {
+        target.allergiesMentioned = sanitizeAllergies(body.allergiesMentioned);
+      }
       target.extractionStatus = 'Verified by Patient';
       updatedRecord = target;
 
@@ -820,31 +939,19 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
     }
 
     const db = getDb();
-    const consent = db.consents.find((c) => c.doctorId === user.id);
-
-    if (!consent || consent.status !== 'approved') {
-      mutateDb((draft) => {
-        appendAccessLog(draft, {
-          actorId: user.id,
-          actorName: user.name,
-          actorRole: 'doctor',
-          action: 'ACCESS_DENIED',
-          targetId: db.patient.id,
-          outcome: 'DENIED',
-          detail: `Denied Doctor Dashboard access to ${user.name} (consent: ${consent?.status ?? 'none'}).`,
-        });
-      });
-      res.status(403).json({
-        error: 'Access blocked by patient consent policy.',
-        consentStatus: consent?.status ?? 'none',
-        consent: consent ?? null,
-        patientName: db.patient.name,
-      });
-      return;
-    }
+    const consent = getApprovedDoctorConsentOrDeny({
+      user,
+      res,
+      targetId: db.patient.id,
+      deniedDetail: (status) => `Denied Doctor Dashboard access to ${user.name} (consent: ${status}).`,
+      errorMessage: 'Access blocked by patient consent policy.',
+      includeConsentObject: true,
+      includePatientName: true,
+    });
+    if (!consent) return;
 
     const accessibleRecords = filterRecordsByScope(db.records, consent.scope).sort((a, b) =>
-      b.date.localeCompare(a.date)
+      compareRecordDates(a, b, 'desc')
     );
     const { entries, discrepancies } = computeAllergiesAndDiscrepanciesForRecords(
       accessibleRecords,
@@ -930,29 +1037,18 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
     }
 
     const db = getDb();
-    const consent = db.consents.find((c) => c.doctorId === user.id);
-    if (!consent || consent.status !== 'approved') {
-      serverAiSummaryCache.delete(user.id);
-      mutateDb((draft) => {
-        appendAccessLog(draft, {
-          actorId: user.id,
-          actorName: user.name,
-          actorRole: 'doctor',
-          action: 'ACCESS_DENIED',
-          targetId: 'AI_SUMMARY',
-          outcome: 'DENIED',
-          detail: `Blocked AI summary generation for ${user.name} (consent: ${consent?.status ?? 'none'}).`,
-        });
-      });
-      res.status(403).json({
-        error: 'Active patient consent is required to generate an AI summary.',
-        consentStatus: consent?.status ?? 'none',
-      });
-      return;
-    }
+    const consent = getApprovedDoctorConsentOrDeny({
+      user,
+      res,
+      targetId: 'AI_SUMMARY',
+      deniedDetail: (status) => `Blocked AI summary generation for ${user.name} (consent: ${status}).`,
+      errorMessage: 'Active patient consent is required to generate an AI summary.',
+      clearSummaryCache: true,
+    });
+    if (!consent) return;
 
     const accessibleRecords = filterRecordsByScope(db.records, consent.scope).sort((a, b) =>
-      a.date.localeCompare(b.date)
+      compareRecordDates(a, b, 'asc')
     );
     const { discrepancies } = computeAllergiesAndDiscrepanciesForRecords(
       accessibleRecords,
@@ -1021,16 +1117,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
 
       res.json({ summary, accessibleRecords, discrepancies, cached: false, cacheKey });
     } catch (aiErr) {
-      const raw = aiErr instanceof Error ? aiErr.message : 'Upstream Gemini error.';
-      let friendly = raw;
-      try {
-        const parsedErr = JSON.parse(raw) as { error?: { message?: string } };
-        if (parsedErr?.error?.message) {
-          friendly = parsedErr.error.message.split('\n')[0].trim();
-        }
-      } catch {
-        // keep raw message
-      }
+      const friendly = parseFriendlyAiError(aiErr, 'Upstream Gemini error.');
       res.status(502).json({
         aiUnavailable: true,
         recordsMatchSeed: recordsMatchOriginalSeed(db.records),
@@ -1050,29 +1137,18 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
     }
 
     const db = getDb();
-    const consent = db.consents.find((c) => c.doctorId === user.id);
-    if (!consent || consent.status !== 'approved') {
-      serverAiSummaryCache.delete(user.id);
-      mutateDb((draft) => {
-        appendAccessLog(draft, {
-          actorId: user.id,
-          actorName: user.name,
-          actorRole: 'doctor',
-          action: 'ACCESS_DENIED',
-          targetId: 'AI_SUMMARY_SAMPLE',
-          outcome: 'DENIED',
-          detail: `Blocked sample AI summary access for ${user.name} (consent: ${consent?.status ?? 'none'}).`,
-        });
-      });
-      res.status(403).json({
-        error: 'Active patient consent is required to view the sample AI summary.',
-        consentStatus: consent?.status ?? 'none',
-      });
-      return;
-    }
+    const consent = getApprovedDoctorConsentOrDeny({
+      user,
+      res,
+      targetId: 'AI_SUMMARY_SAMPLE',
+      deniedDetail: (status) => `Blocked sample AI summary access for ${user.name} (consent: ${status}).`,
+      errorMessage: 'Active patient consent is required to view the sample AI summary.',
+      clearSummaryCache: true,
+    });
+    if (!consent) return;
 
     const accessibleRecords = filterRecordsByScope(db.records, consent.scope).sort((a, b) =>
-      a.date.localeCompare(b.date)
+      compareRecordDates(a, b, 'asc')
     );
     const { discrepancies } = computeAllergiesAndDiscrepanciesForRecords(
       accessibleRecords,

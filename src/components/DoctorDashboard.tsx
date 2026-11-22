@@ -5,18 +5,19 @@ import {
   FileText,
   Lock,
   Send,
-  ShieldAlert,
   Sparkles,
   UserCheck,
 } from 'lucide-react';
-import { ApiError, requestDoctorConsent, verifyAllergyDiscrepancy } from '../api';
+import { getErrorMessage, requestDoctorConsent, verifyAllergyDiscrepancy } from '../api';
 import type {
   AllergyDiscrepancy,
   AuthUser,
   ConsentGrant,
+  ConsentScope,
   MedicalRecord,
   PatientProfile,
 } from '../types';
+import { AllergyDiscrepancyCard } from './AllergyDiscrepancyCard';
 import { BiomarkerCharts } from './BiomarkerCharts';
 
 interface DoctorDashboardProps {
@@ -49,9 +50,7 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({
   const [requestPurpose, setRequestPurpose] = useState(
     'Pre-consultation cross-hospital history & allergy reconciliation'
   );
-  const [requestScope, setRequestScope] = useState<'Full History' | 'Labs & Allergies Only'>(
-    'Full History'
-  );
+  const [requestScope, setRequestScope] = useState<ConsentScope>('Full History');
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestDone, setRequestDone] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -71,7 +70,7 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({
       setRequestDone(true);
       await onRefreshDoctor();
     } catch (err) {
-      setRequestError(err instanceof ApiError ? err.message : 'Failed to send access request.');
+      setRequestError(getErrorMessage(err, 'Failed to send access request.'));
     } finally {
       setRequestSubmitting(false);
     }
@@ -85,7 +84,7 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({
       await verifyAllergyDiscrepancy(substance, verificationNote.trim());
       await onRefreshDoctor();
     } catch (err) {
-      setVerifyError(err instanceof ApiError ? err.message : 'Failed to save verification note.');
+      setVerifyError(getErrorMessage(err, 'Failed to save verification note.'));
     } finally {
       setVerifying(false);
     }
@@ -167,9 +166,7 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({
               </label>
               <select
                 value={requestScope}
-                onChange={(e) =>
-                  setRequestScope(e.target.value as 'Full History' | 'Labs & Allergies Only')
-                }
+                onChange={(e) => setRequestScope(e.target.value as ConsentScope)}
                 className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
               >
                 <option value="Full History">Full History</option>
@@ -243,119 +240,41 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({
 
       {/* Flagged Allergy Discrepancy Requiring Physician Verification */}
       {discrepancies.map((disc) => (
-        <div
+        <AllergyDiscrepancyCard
           key={disc.substance}
-          className={`rounded-xl border p-5 ${
-            disc.requiresVerification
-              ? 'border-amber-300 bg-amber-50/80'
-              : 'border-teal-200 bg-teal-50/50'
-          }`}
+          discrepancy={disc}
+          records={records}
+          variant="doctor"
+          onSelectRecord={onSelectRecord}
         >
-          <div className="flex items-start gap-3">
-            {disc.requiresVerification ? (
-              <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-            ) : (
-              <CheckCircle2 className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
-            )}
-            <div className="flex-1 space-y-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-base font-bold text-slate-900">
-                    Allergy Discrepancy Alert: {disc.substance}
-                  </h2>
-                  <span
-                    className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                      disc.requiresVerification
-                        ? 'bg-amber-200/80 text-amber-950'
-                        : 'bg-teal-100 text-teal-900'
-                    }`}
-                  >
-                    {disc.requiresVerification ? 'Doctor Verification Required' : 'Verified'}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-700 mt-1">
-                  Conflicting severity levels documented across facilities. Verify with the patient
-                  before prescribing beta-lactams.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {disc.entries.map((entry) => {
-                  const rec = records.find((r) => r.id === entry.sourceRecordId);
-                  return (
-                    <div
-                      key={entry.id}
-                      className="rounded-lg border border-slate-200 bg-white p-3.5 text-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-semibold text-slate-900">{entry.hospital}</span>
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                            entry.severity === 'Severe'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {entry.severity}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600">{entry.reaction}</p>
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500 font-mono tabular-nums">
-                        <span>{entry.recordedAt}</span>
-                        {rec && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectRecord(rec)}
-                            className="text-teal-700 font-semibold hover:underline"
-                          >
-                            Source: {entry.sourceRecordId}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {disc.resolutionNote ? (
-                <div className="rounded-lg border border-teal-200 bg-white px-4 py-3 text-xs text-slate-700">
-                  <span className="font-semibold text-teal-800">
-                    Verified by {disc.resolvedByDoctor}:
-                  </span>{' '}
-                  {disc.resolutionNote}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-amber-200 bg-white p-4 space-y-2.5">
-                  <label className="block text-xs font-semibold text-slate-800">
-                    Record Physician Verification Note
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={verificationNote}
-                      onChange={(e) => setVerificationNote(e.target.value)}
-                      className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    />
-                    <button
-                      type="button"
-                      disabled={verifying}
-                      onClick={() => handleVerifyDiscrepancy(disc.substance)}
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
-                    >
-                      {verifying ? 'Saving...' : 'Confirm Verification'}
-                    </button>
-                  </div>
-                  {verifyError && (
-                    <div className="text-xs text-rose-700 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>{verifyError}</span>
-                    </div>
-                  )}
-                </div>
-              )}
+          <div className="rounded-lg border border-amber-200 bg-white p-4 space-y-2.5">
+            <label className="block text-xs font-semibold text-slate-800">
+              Record Physician Verification Note
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={verificationNote}
+                onChange={(e) => setVerificationNote(e.target.value)}
+                className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+              />
+              <button
+                type="button"
+                disabled={verifying}
+                onClick={() => handleVerifyDiscrepancy(disc.substance)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+              >
+                {verifying ? 'Saving...' : 'Confirm Verification'}
+              </button>
             </div>
+            {verifyError && (
+              <div className="text-xs text-rose-700 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{verifyError}</span>
+              </div>
+            )}
           </div>
-        </div>
+        </AllergyDiscrepancyCard>
       ))}
 
       {/* Biomarker Charts */}

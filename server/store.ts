@@ -41,6 +41,24 @@ export function resolveSafeUploadPath(storageKey: string): string {
   return resolved;
 }
 
+function renderRecordPdfBuffer(patient: PatientProfile, rec: MedicalRecord): Promise<Buffer> {
+  return buildSyntheticClinicalPdf({
+    recordId: rec.id,
+    patientName: patient.name,
+    medvaultId: patient.medvaultId,
+    dob: patient.dob,
+    hospital: rec.hospital,
+    clinician: rec.clinician,
+    category: rec.category,
+    date: rec.date,
+    title: rec.title,
+    summary: rec.summary,
+    facts: rec.facts,
+    medications: rec.medications,
+    allergies: rec.allergiesMentioned,
+  });
+}
+
 async function buildInitialSeedState(): Promise<MedVaultDatabase> {
   const patient: PatientProfile = {
     id: 'patient-ananya',
@@ -320,21 +338,7 @@ async function buildInitialSeedState(): Promise<MedVaultDatabase> {
   // Materialize synthetic PDFs into PRIVATE_UPLOAD_DIR
   fs.mkdirSync(PRIVATE_UPLOAD_DIR, { recursive: true });
   for (const rec of records) {
-    const pdfBuffer = await buildSyntheticClinicalPdf({
-      recordId: rec.id,
-      patientName: patient.name,
-      medvaultId: patient.medvaultId,
-      dob: patient.dob,
-      hospital: rec.hospital,
-      clinician: rec.clinician,
-      category: rec.category,
-      date: rec.date,
-      title: rec.title,
-      summary: rec.summary,
-      facts: rec.facts,
-      medications: rec.medications,
-      allergies: rec.allergiesMentioned,
-    });
+    const pdfBuffer = await renderRecordPdfBuffer(patient, rec);
     const destPath = resolveSafeUploadPath(rec.storageKey);
     fs.writeFileSync(destPath, pdfBuffer);
     rec.fileSizeBytes = pdfBuffer.length;
@@ -429,21 +433,7 @@ export async function initDb(): Promise<MedVaultDatabase> {
       for (const rec of dbCache.records) {
         const filePath = resolveSafeUploadPath(rec.storageKey);
         if (!fs.existsSync(filePath)) {
-          const pdfBuffer = await buildSyntheticClinicalPdf({
-            recordId: rec.id,
-            patientName: dbCache.patient.name,
-            medvaultId: dbCache.patient.medvaultId,
-            dob: dbCache.patient.dob,
-            hospital: rec.hospital,
-            clinician: rec.clinician,
-            category: rec.category,
-            date: rec.date,
-            title: rec.title,
-            summary: rec.summary,
-            facts: rec.facts,
-            medications: rec.medications,
-            allergies: rec.allergiesMentioned,
-          });
+          const pdfBuffer = await renderRecordPdfBuffer(dbCache.patient, rec);
           fs.writeFileSync(filePath, pdfBuffer);
           rec.fileSizeBytes = pdfBuffer.length;
         }

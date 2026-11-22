@@ -20,11 +20,15 @@ The current implementation uses **synthetic patient data and simulated hospital 
 
 ## The Problems MedVault Addresses
 
-**Fragmented records across healthcare providers.** Medical histories, allergies, prescriptions, and test results are often stored in separate systems, limiting continuity of care.
+1. **Fragmented cross-hospital clinical context (PS1):** Doctors cannot easily access consolidated patient medical histories across separate hospital systems, leading to missed lab trends and unflagged allergy contradictions.
+2. **Limited patient portability (PS2):** Patients struggle to gather, organize, and carry portable digital copies of their own medical reports, prescriptions, and discharge summaries.
 
-**Limited access to portable health information.** Patients may depend on paper files or individually downloaded reports when consulting different healthcare professionals.
+MedVault connects these two problems directly through five implemented workflows using synthetic multi-hospital records (no live external hospital EHR integration):
 
-MedVault connects these challenges through a patient-controlled health vault and an authorized clinical review experience.
+| Problem | Implemented MedVault Solution |
+| --- | --- |
+| **PS1: Doctors lack cross-hospital histories** | **Consent-Controlled Doctor Access** (`Full History` vs. `Labs & Allergies Only` scopes + instant revocation) and **Source-Linked Clinical Summaries** with verbatim source evidence and cross-hospital allergy discrepancy alerts. |
+| **PS2: Patients lack portable digital records** | **AI-Powered Digitization** (PDF/image upload with human verification), a searchable **Unified Medical Timeline**, and a one-click **Portable Health Passport PDF** export. |
 
 ## Key Features
 
@@ -130,14 +134,15 @@ npm run dev
 
 Open the URL printed by the development server. Ensure the application backend is running alongside the frontend if your environment starts them separately.
 
-### Build and Type-Check
+### Build, Type-Check & Automated Tests
 
 ```bash
 npm run build
 npm run lint
+npm test
 ```
 
-These commands reflect the reported project scripts; refer to `package.json` for the scripts available in your exported repository.
+`npm test` runs the offline deterministic AI reliability, citation-grounding, PDF export, and HTTP consent-enforcement test suite (`tests/evaluate.ts`). See [docs/PROMPT_ENGINEERING.md](docs/PROMPT_ENGINEERING.md) for documented prompts, safety rules, and evaluation details.
 
 ## Selected API Routes
 

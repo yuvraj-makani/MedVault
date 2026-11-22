@@ -13,7 +13,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { ApiError, fetchSecureFileBlobUrl, verifyUploadedRecord } from '../api';
+import { fetchSecureFileBlobUrl, getErrorMessage, verifyUploadedRecord } from '../api';
 import type { MedicalRecord } from '../types';
 
 interface RecordDetailModalProps {
@@ -52,11 +52,7 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
         setPreviewUrl(blobUrl);
         setPreviewType(contentType);
       } catch (err) {
-        if (err instanceof ApiError) {
-          setFileError(err.message);
-        } else {
-          setFileError('Could not load private document preview.');
-        }
+        setFileError(getErrorMessage(err, 'Could not load private document preview.'));
       } finally {
         setLoadingFile(false);
       }
@@ -71,6 +67,17 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
     };
   }, [record]);
 
+  useEffect(() => {
+    if (!record) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [record, onClose]);
+
   if (!record) return null;
 
   const handleMarkVerified = async () => {
@@ -80,7 +87,7 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
       const { record: updated } = await verifyUploadedRecord(record.id);
       onRecordVerified?.(updated);
     } catch (err) {
-      setVerifyError(err instanceof ApiError ? err.message : 'Unable to verify record.');
+      setVerifyError(getErrorMessage(err, 'Unable to verify record.'));
     } finally {
       setVerifying(false);
     }

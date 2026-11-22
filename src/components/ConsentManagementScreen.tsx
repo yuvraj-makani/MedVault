@@ -8,8 +8,8 @@ import {
   ShieldOff,
   UserCheck,
 } from 'lucide-react';
-import { ApiError, updateConsent } from '../api';
-import type { AccessLogEntry, ConsentGrant } from '../types';
+import { getErrorMessage, updateConsent } from '../api';
+import type { AccessLogEntry, ConsentGrant, ConsentScope } from '../types';
 
 interface ConsentManagementScreenProps {
   consents: ConsentGrant[];
@@ -24,9 +24,7 @@ export const ConsentManagementScreen: React.FC<ConsentManagementScreenProps> = (
 }) => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [selectedScopes, setSelectedScopes] = useState<
-    Record<string, 'Full History' | 'Labs & Allergies Only'>
-  >({});
+  const [selectedScopes, setSelectedScopes] = useState<Record<string, ConsentScope>>({});
 
   const handleDecision = async (
     consent: ConsentGrant,
@@ -39,11 +37,7 @@ export const ConsentManagementScreen: React.FC<ConsentManagementScreenProps> = (
       await updateConsent(consent.id, status, scope);
       await onRefresh();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setErrorMsg(err.message);
-      } else {
-        setErrorMsg('Could not update consent permissions.');
-      }
+      setErrorMsg(getErrorMessage(err, 'Could not update consent permissions.'));
     } finally {
       setBusyId(null);
     }
@@ -129,7 +123,7 @@ export const ConsentManagementScreen: React.FC<ConsentManagementScreenProps> = (
                     onChange={(e) =>
                       setSelectedScopes((prev) => ({
                         ...prev,
-                        [grant.id]: e.target.value as 'Full History' | 'Labs & Allergies Only',
+                        [grant.id]: e.target.value as ConsentScope,
                       }))
                     }
                     className="px-3 py-2 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-800"

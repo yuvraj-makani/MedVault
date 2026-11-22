@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from 'pdf-lib';
-import type {
-  AllergyDiscrepancy,
-  AllergyEntry,
-  MedicalRecord,
-  PatientProfile,
+import {
+  compareRecordDates,
+  type AllergyDiscrepancy,
+  type AllergyEntry,
+  type MedicalRecord,
+  type PatientProfile,
 } from '../src/types.js';
 
 function sanitizeWinAnsi(input: string): string {
@@ -369,7 +370,7 @@ export async function buildHealthPassportPdf(params: {
   y -= 2;
 
   const medRows: { med: string; record: MedicalRecord }[] = [];
-  const sortedAscDesc = [...params.records].sort((a, b) => b.date.localeCompare(a.date));
+  const sortedAscDesc = [...params.records].sort((a, b) => compareRecordDates(a, b, 'desc'));
   for (const rec of sortedAscDesc) {
     for (const med of rec.medications) {
       medRows.push({ med, record: rec });

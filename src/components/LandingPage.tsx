@@ -195,30 +195,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-7">
                 <div className="text-xs font-semibold text-rose-700 uppercase tracking-wider mb-2">
-                  The Patient Challenge
+                  Problem 1 · Patient Portability Gap
                 </div>
                 <h3 className="font-display text-xl font-bold text-slate-900">
-                  Records trapped across disconnected portals &amp; paper folders
+                  Patients struggle to gather and carry portable digital medical records
                 </h3>
                 <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-                  Patients like Ananya Sharma accumulate diagnostic panels at Metro Health Clinic,
-                  imaging at Sunrise Medical Center, and prescriptions at CityCare Hospital. Sharing
-                  a coherent history means digging through emails or carrying folders—and critical
-                  updates like new drug reactions easily get lost.
+                  Patients accumulate lab reports, imaging, prescriptions, and discharge PDFs
+                  across separate clinics without a single portable copy. MedVault solves this with
+                  AI-powered digitization, a searchable unified medical timeline, and a one-click
+                  Portable Health Passport PDF.
                 </p>
               </div>
 
               <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-7">
                 <div className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-2">
-                  The Physician Challenge
+                  Problem 2 · Fragmented Clinical Context
                 </div>
                 <h3 className="font-display text-xl font-bold text-slate-900">
-                  Zero cross-facility context and hidden allergy contradictions
+                  Doctors cannot access consolidated histories across hospital systems
                 </h3>
                 <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-                  An outpatient physician rarely sees urgent-care encounters from another network.
-                  When one hospital logs a mild rash and another logs severe anaphylaxis, unflagged
-                  discrepancies create preventable medication risk during a brief consultation.
+                  Outpatient clinicians rarely see urgent-care encounters or conflicting allergy logs
+                  from other facilities. With patient-approved consent, MedVault delivers scoped
+                  cross-hospital timelines, discrepancy alerts, and source-linked clinical summaries
+                  built from accessible records.
                 </p>
               </div>
             </div>
@@ -230,7 +231,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
           <div className="max-w-7xl mx-auto px-6">
             <div className="max-w-2xl mb-10">
               <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                How MedVault connects patient control with clinical speed
+                How MedVault connects patient portability with clinical context
               </h2>
             </div>
 
@@ -239,13 +240,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
                 <div className="flex items-center gap-3 mb-3">
                   <Upload className="w-5 h-5 text-teal-700 shrink-0" />
                   <h3 className="font-display text-lg font-bold text-slate-900">
-                    01. Private Upload &amp; AI Extraction
+                    01. AI Digitization, Unified Timeline &amp; Health Passport
                   </h3>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Upload PDF reports or clinical photos to private server storage. Server-side
-                  extraction drafts structured observations, medications, and uncertainties—always
-                  requiring patient confirmation before saving.
+                  Upload PDFs or images into private storage, extract structured clinical data for
+                  patient verification, browse a unified cross-facility timeline, and export a
+                  Portable Health Passport PDF anytime.
                 </p>
               </div>
 
@@ -253,13 +254,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
                 <div className="flex items-center gap-3 mb-3">
                   <Lock className="w-5 h-5 text-teal-700 shrink-0" />
                   <h3 className="font-display text-lg font-bold text-slate-900">
-                    02. Approve &amp; Revoke Consent Anytime
+                    02. Consent-Controlled Doctor Access
                   </h3>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Doctors submit explicit access requests with scope and purpose. Patients approve
-                  or revoke in one click; the Express backend immediately enforces permissions on
-                  every API route and file stream.
+                  Doctors request access with explicit clinical scope (Full History or Labs &amp;
+                  Allergies Only). Patients approve or revoke in one click; backend routes and file
+                  downloads enforce every decision immediately.
                 </p>
               </div>
 
@@ -267,13 +268,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
                 <div className="flex items-center gap-3 mb-3">
                   <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
                   <h3 className="font-display text-lg font-bold text-slate-900">
-                    03. Automated Discrepancy Flagging
+                    03. Automated Allergy Discrepancy Flagging
                   </h3>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Cross-hospital allergy entries are reconciled automatically. Conflicting severities
-                  for the same substance are surfaced for explicit physician verification rather than
-                  silently overwritten.
+                  Cross-hospital allergy entries are compared automatically across accessible records.
+                  Conflicting severities for the same substance are surfaced for explicit physician
+                  verification rather than silently overwritten.
                 </p>
               </div>
 
@@ -281,13 +282,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
                 <div className="flex items-center gap-3 mb-3">
                   <FileSearch className="w-5 h-5 text-teal-700 shrink-0" />
                   <h3 className="font-display text-lg font-bold text-slate-900">
-                    04. Source-Linked Doctor AI Brief
+                    04. Source-Linked Doctor AI Summary
                   </h3>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Generates a structured clinical synthesis strictly from consent-approved records.
-                  Every extracted finding links directly to its original record ID and private
-                  document.
+                  Generates a structured clinical brief strictly from consent-approved records.
+                  Every extracted finding cites its original record ID, shows verbatim source text,
+                  and links directly to the permitted document.
                 </p>
               </div>
             </div>

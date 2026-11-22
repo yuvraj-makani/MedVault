@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { MedicalRecord } from '../types';
+import { compareRecordDates, ISO_DATE_RE, type MedicalRecord } from '../types';
 
 interface BiomarkerChartsProps {
   records: MedicalRecord[];
@@ -16,8 +16,8 @@ interface DataPoint {
 function extractNumericMetric(records: MedicalRecord[], keyword: string): DataPoint[] {
   const points: DataPoint[] = [];
   const sorted = [...records]
-    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .filter((r) => ISO_DATE_RE.test(r.date))
+    .sort((a, b) => compareRecordDates(a, b, 'asc'));
   for (const rec of sorted) {
     for (const fact of rec.facts) {
       if (fact.label.toLowerCase().includes(keyword.toLowerCase())) {

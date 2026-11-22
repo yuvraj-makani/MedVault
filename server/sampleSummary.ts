@@ -1,6 +1,7 @@
 import type {
   AISummaryResult,
   AllergyDiscrepancy,
+  ConsentScope,
   MedicalRecord,
 } from '../src/types.js';
 
@@ -176,7 +177,7 @@ const SAMPLE_MEDICATIONS: SampleMedicationTemplate[] = [
 
 export function buildSampleAiSummary(params: {
   accessibleRecords: MedicalRecord[];
-  scope: 'Full History' | 'Labs & Allergies Only';
+  scope: ConsentScope;
   discrepancies: AllergyDiscrepancy[];
 }): AISummaryResult {
   const permittedMap = new Map(params.accessibleRecords.map((r) => [r.id, r]));

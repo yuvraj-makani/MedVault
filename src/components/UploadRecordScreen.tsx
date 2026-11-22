@@ -11,12 +11,15 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { ApiError, extractRecordWithAi, uploadRecord } from '../api';
-import type {
-  AllergyMention,
-  ExtractedFact,
-  MedicalRecord,
-  RecordCategory,
+import { extractRecordWithAi, getErrorMessage, uploadRecord } from '../api';
+import {
+  ISO_DATE_RE,
+  KNOWN_HOSPITALS,
+  RECORD_CATEGORIES,
+  type AllergyMention,
+  type ExtractedFact,
+  type MedicalRecord,
+  type RecordCategory,
 } from '../types';
 
 interface UploadRecordScreenProps {
@@ -24,21 +27,6 @@ interface UploadRecordScreenProps {
   onUploaded: (record: MedicalRecord) => void;
   onGoTimeline: () => void;
 }
-
-const CATEGORIES: RecordCategory[] = [
-  'Lab Report',
-  'Consultation',
-  'Prescription',
-  'Imaging',
-  'Discharge Summary',
-  'Allergy & Immunization',
-];
-
-const KNOWN_HOSPITALS = [
-  'CityCare Hospital',
-  'Sunrise Medical Center',
-  'Metro Health Clinic',
-];
 
 const HOSPITAL_OPTIONS = [...KNOWN_HOSPITALS, 'Other Clinic / Lab'];
 
@@ -167,7 +155,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       setHospital(matched.selected);
       setCustomHospital(matched.custom);
       setClinician(draft.clinician);
-      if (draft.date && /^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+      if (draft.date && ISO_DATE_RE.test(draft.date)) {
         setDate(draft.date);
         setDateUnknown(false);
         setDateUncertainty(null);
@@ -193,11 +181,12 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       setExtractionNotes(draft.extractionNotes);
       setExtractionStatus('Extracted — Review Required');
     } catch (err) {
-      if (err instanceof ApiError) {
-        setAiError(err.message);
-      } else {
-        setAiError('AI extraction could not be completed. You can enter the details manually.');
-      }
+      setAiError(
+        getErrorMessage(
+          err,
+          'AI extraction could not be completed. You can enter the details manually.'
+        )
+      );
     } finally {
       setExtracting(false);
     }
@@ -351,11 +340,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
       setExtractionStatus('Manual Entry');
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
-      if (err instanceof ApiError) {
-        setSubmitError(err.message);
-      } else {
-        setSubmitError('Failed to upload medical record.');
-      }
+      setSubmitError(getErrorMessage(err, 'Failed to upload medical record.'));
     } finally {
       setSubmitting(false);
     }
@@ -611,7 +596,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                   onChange={(e) => setCategory(e.target.value as RecordCategory)}
                   className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
                 >
-                  {CATEGORIES.map((cat) => (
+                  {RECORD_CATEGORIES.map((cat) => (
                     <option key={cat} value={cat}>
                       {cat}
                     </option>

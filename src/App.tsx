@@ -21,6 +21,7 @@ import {
   createDemoSession,
   fetchDoctorOverview,
   fetchPatientDashboard,
+  getErrorMessage,
   resetDemoData,
 } from './api';
 import { AiSummaryScreen, type CachedAiSummaryEntry } from './components/AiSummaryScreen';
@@ -31,15 +32,16 @@ import { PatientDashboard } from './components/PatientDashboard';
 import { RecordDetailModal } from './components/RecordDetailModal';
 import { TimelineScreen } from './components/TimelineScreen';
 import { UploadRecordScreen } from './components/UploadRecordScreen';
-import type {
-  AccessLogEntry,
-  AllergyDiscrepancy,
-  AllergyEntry,
-  AuthUser,
-  ConsentGrant,
-  MedicalRecord,
-  PatientProfile,
-  Role,
+import {
+  buildSummaryRecordSignature,
+  type AccessLogEntry,
+  type AllergyDiscrepancy,
+  type AllergyEntry,
+  type AuthUser,
+  type ConsentGrant,
+  type MedicalRecord,
+  type PatientProfile,
+  type Role,
 } from './types';
 
 export default function App() {
@@ -96,7 +98,7 @@ export default function App() {
       setAccessLogs(data.accessLogs);
       setAiConfigured(data.aiConfigured);
     } catch (err) {
-      setGlobalError(err instanceof Error ? err.message : 'Failed to load patient dashboard.');
+      setGlobalError(getErrorMessage(err, 'Failed to load patient dashboard.'));
     } finally {
       setPatientLoading(false);
     }
@@ -185,14 +187,8 @@ export default function App() {
     if (!currentUserId || currentUserRole !== 'doctor' || !docConsent || docConsent.status !== 'approved') {
       return '';
     }
-    const recSig = [...docRecords]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((r) => `${r.id}:${r.extractionStatus}:${r.date}:${r.summary.length}`)
-      .join('|');
-    const discSig = docDiscrepancies
-      .map((d) => `${d.substance}:${d.resolvedAt ?? 'unverified'}`)
-      .join('|');
-    return `${currentUserId}::${docConsent.scope}::${docConsent.updatedAt}::${recSig}::${discSig}`;
+    const sig = buildSummaryRecordSignature(docRecords, docDiscrepancies);
+    return `${currentUserId}::${docConsent.scope}::${docConsent.updatedAt}::${sig}`;
   }, [currentUserId, currentUserRole, docConsent, docRecords, docDiscrepancies]);
 
   const handleResetDemo = async () => {
