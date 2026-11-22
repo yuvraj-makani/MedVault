@@ -134,7 +134,7 @@ export default function App() {
           consent: (err.data.consent as ConsentGrant) ?? null,
         });
       } else {
-        setGlobalError(err instanceof Error ? err.message : 'Failed to load doctor dashboard.');
+        setGlobalError(getErrorMessage(err, 'Failed to load doctor dashboard.'));
       }
     } finally {
       setDoctorLoading(false);
@@ -155,7 +155,7 @@ export default function App() {
         setViewMode('workspace');
         setScreen(targetScreen);
       } catch (err) {
-        setGlobalError(err instanceof Error ? err.message : 'Could not switch demo session.');
+        setGlobalError(getErrorMessage(err, 'Could not switch demo session.'));
       } finally {
         setAuthLoading(false);
       }
@@ -207,7 +207,7 @@ export default function App() {
         await loadPatientData();
       }
     } catch (err) {
-      setGlobalError(err instanceof Error ? err.message : 'Unable to reset demo data.');
+      setGlobalError(getErrorMessage(err, 'Unable to reset demo data.'));
     } finally {
       setResetting(false);
     }
@@ -328,13 +328,14 @@ export default function App() {
         </div>
 
         {/* Navigation */}
-        <nav className="space-y-1">
+        <nav aria-label="Workspace navigation" className="space-y-1">
           {navItems.map((item) => {
             const active = screen === item.id;
             return (
               <button
                 key={item.id}
                 type="button"
+                aria-current={active ? 'page' : undefined}
                 onClick={() => {
                   setScreen(item.id);
                   setMobileMenuOpen(false);
@@ -430,7 +431,12 @@ export default function App() {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden flex">
+        <div
+          className="fixed inset-0 z-40 lg:hidden flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Workspace navigation menu"
+        >
           <div
             className="fixed inset-0 bg-slate-950/40"
             onClick={() => setMobileMenuOpen(false)}
@@ -491,6 +497,7 @@ export default function App() {
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <button
               type="button"
+              aria-expanded={walkthroughOpen}
               onClick={() => setWalkthroughOpen((prev) => !prev)}
               className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-slate-50/70 transition-colors"
             >

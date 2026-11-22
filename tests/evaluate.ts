@@ -48,10 +48,12 @@ async function main() {
   } = await import('../server/gemini.js');
   const { buildSampleAiSummary } = await import('../server/sampleSummary.js');
   const {
+    PRIVATE_UPLOAD_DIR,
     computeAllergiesAndDiscrepanciesForRecords,
     getDb,
     initDb,
     resetDemoDb,
+    resolveSafeUploadPath,
   } = await import('../server/store.js');
   const {
     createMedVaultApp,
@@ -644,6 +646,121 @@ async function main() {
       assert.equal(staleSample.status, 409);
 
       return 'Verified authorized records, Health Passport PDF (%PDF-), scoped file access, sample fallback + 409 guard, and sanitized verify.';
+    });
+
+    // -----------------------------------------------------------------------
+    // CASE 14: Cross-role RBAC, path confinement, verify-allergy & rate limits
+    // -----------------------------------------------------------------------
+    await recordCase(14, 'Cross-role RBAC, path confinement, verify-allergy & rate limiting', 'security-http', async () => {
+      await resetDemoDb();
+      const patientAuth = await reqJson(baseUrl, '/api/auth/demo-session', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ role: 'patient' }),
+      });
+      const pToken = String(patientAuth.json.token);
+      await reqJson(baseUrl, '/api/demo/reset', pToken, { method: 'POST' });
+
+      const vikramAuth = await reqJson(baseUrl, '/api/auth/demo-session', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ role: 'doctor', doctorId: 'doc-vikram' }),
+      });
+      const vToken = String(vikramAuth.json.token);
+
+      // 1. Cross-role RBAC boundaries
+      const docOnPatientDash = await reqJson(baseUrl, '/api/patient/dashboard', vToken);
+      const docOnUpload = await reqJson(baseUrl, '/api/records', vToken, { method: 'POST' });
+      const docOnVerify = await reqJson(baseUrl, '/api/records/REC-101/verify', vToken, {
+        method: 'PATCH',
+        body: '{}',
+      });
+      const docOnConsentPatch = await reqJson(baseUrl, '/api/consents/CON-201', vToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'approved' }),
+      });
+      for (const st of [
+        docOnPatientDash.status,
+        docOnUpload.status,
+        docOnVerify.status,
+        docOnConsentPatch.status,
+      ]) {
+        if (st !== 403) consentBoundaryViolations++;
+        assert.equal(st, 403);
+      }
+
+      const patOnDocOverview = await reqJson(baseUrl, '/api/doctor/overview', pToken);
+      const patOnDocSample = await reqJson(baseUrl, '/api/doctor/ai-summary/sample', pToken, {
+        method: 'POST',
+      });
+      const patOnDocVerifyAllergy = await reqJson(baseUrl, '/api/doctor/verify-allergy', pToken, {
+        method: 'POST',
+        body: JSON.stringify({ substance: 'Penicillin', resolutionNote: 'test' }),
+      });
+      const patOnDocReq = await reqJson(baseUrl, '/api/consents/request', pToken, {
+        method: 'POST',
+        body: JSON.stringify({ purpose: 'test', scope: 'Full History' }),
+      });
+      for (const st of [
+        patOnDocOverview.status,
+        patOnDocSample.status,
+        patOnDocVerifyAllergy.status,
+        patOnDocReq.status,
+      ]) {
+        if (st !== 403) consentBoundaryViolations++;
+        assert.equal(st, 403);
+      }
+
+      // 2. Defensive empty-body / missing-record / path-confinement checks
+      const emptyAuthRes = await reqJson(baseUrl, '/api/auth/demo-session', undefined, {
+        method: 'POST',
+      });
+      assert.equal(emptyAuthRes.status, 400);
+
+      const missingFileRes = await reqJson(baseUrl, '/api/records/REC-DOES-NOT-EXIST/file', pToken);
+      assert.equal(missingFileRes.status, 404);
+
+      const confined = resolveSafeUploadPath('../../etc/passwd');
+      assert.ok(confined.startsWith(PRIVATE_UPLOAD_DIR), 'Storage path must remain confined to PRIVATE_UPLOAD_DIR');
+
+      // 3. Approved doctor verifies Penicillin discrepancy -> requiresVerification becomes false
+      const verifyAllergyOk = await reqJson(baseUrl, '/api/doctor/verify-allergy', vToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          substance: 'Penicillin',
+          resolutionNote: 'Confirmed severe anaphylaxis contraindication with patient.',
+        }),
+      });
+      assert.equal(verifyAllergyOk.status, 200);
+      const updatedDiscs = verifyAllergyOk.json.discrepancies as Array<{ requiresVerification: boolean }>;
+      assert.equal(updatedDiscs[0]?.requiresVerification, false);
+
+      // Revoked doctor cannot verify allergy discrepancy (403 + logged)
+      await reqJson(baseUrl, '/api/consents/CON-201', pToken, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'revoked' }),
+      });
+      const verifyAllergyRevoked = await reqJson(baseUrl, '/api/doctor/verify-allergy', vToken, {
+        method: 'POST',
+        body: JSON.stringify({ substance: 'Penicillin', resolutionNote: 'Unauthorized update' }),
+      });
+      if (verifyAllergyRevoked.status !== 403) consentBoundaryViolations++;
+      assert.equal(verifyAllergyRevoked.status, 403);
+
+      // 4. AI endpoint rate limiting (10 req/min limit -> 11th returns HTTP 429 + Retry-After)
+      for (let i = 0; i < 10; i++) {
+        const res = await fetch(`${baseUrl}/api/records/extract`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${pToken}` },
+        });
+        assert.equal(res.status, 400);
+      }
+      const rateLimited = await fetch(`${baseUrl}/api/records/extract`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pToken}` },
+      });
+      assert.equal(rateLimited.status, 429);
+      assert.ok(Number(rateLimited.headers.get('retry-after')) >= 1);
+
+      return 'Verified cross-role 403s, empty-body 400s, path confinement, verify-allergy RBAC, and HTTP 429 rate limiting.';
     });
   } finally {
     // Restore clean seeded database state & close ephemeral server

@@ -414,13 +414,22 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
           </div>
 
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Upload medical PDF or image file"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               handleFileChange(e.dataTransfer.files?.[0] ?? null);
             }}
             onClick={() => fileInputRef.current?.click()}
-            className="cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50/70 hover:bg-slate-50 hover:border-teal-600 transition-colors p-6 text-center"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            className="cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50/70 hover:bg-slate-50 hover:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600 transition-colors p-6 text-center"
           >
             <input
               ref={fileInputRef}
@@ -576,10 +585,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="upload-record-title"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   Document Title *
                 </label>
                 <input
+                  id="upload-record-title"
                   type="text"
                   required
                   value={title}
@@ -590,8 +603,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category *</label>
+                <label
+                  htmlFor="upload-record-category"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
+                  Category *
+                </label>
                 <select
+                  id="upload-record-category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value as RecordCategory)}
                   className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
@@ -605,10 +624,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="upload-record-date"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   Document Date {dateUnknown ? '(Missing)' : '*'}
                 </label>
                 <input
+                  id="upload-record-date"
                   type="date"
                   required={!dateUnknown}
                   disabled={dateUnknown}
@@ -642,10 +665,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="upload-record-hospital"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   Hospital / Facility *
                 </label>
                 <select
+                  id="upload-record-hospital"
                   value={hospital}
                   onChange={(e) => setHospital(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
@@ -660,6 +687,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                   <input
                     type="text"
                     required
+                    aria-label="Custom hospital or clinic name"
                     value={customHospital}
                     onChange={(e) => setCustomHospital(e.target.value)}
                     placeholder="Enter hospital or clinic name"
@@ -669,10 +697,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="upload-record-clinician"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   Clinician / Lab Name
                 </label>
                 <input
+                  id="upload-record-clinician"
                   type="text"
                   value={clinician}
                   onChange={(e) => setClinician(e.target.value)}
@@ -682,10 +714,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label
+                  htmlFor="upload-record-summary"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
                   Clinical Summary *
                 </label>
                 <textarea
+                  id="upload-record-summary"
                   required
                   rows={3}
                   value={summary}
@@ -719,6 +755,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
                         <input
                           type="text"
+                          aria-label={`Observation ${idx + 1} label`}
                           placeholder="Test / Label"
                           value={fact.label}
                           onChange={(e) => updateFact(idx, { label: e.target.value })}
@@ -726,6 +763,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                         />
                         <input
                           type="text"
+                          aria-label={`Observation ${idx + 1} value`}
                           placeholder="Value"
                           value={fact.value}
                           onChange={(e) => updateFact(idx, { value: e.target.value })}
@@ -733,12 +771,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                         />
                         <input
                           type="text"
+                          aria-label={`Observation ${idx + 1} unit`}
                           placeholder="Unit"
                           value={fact.unit || ''}
                           onChange={(e) => updateFact(idx, { unit: e.target.value })}
                           className="sm:col-span-2 px-2.5 py-1.5 text-xs border border-slate-300 rounded-md"
                         />
                         <select
+                          aria-label={`Observation ${idx + 1} status flag`}
                           value={fact.flag || 'normal'}
                           onChange={(e) =>
                             updateFact(idx, {
@@ -795,6 +835,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                     <div key={idx} className="flex items-center gap-2">
                       <input
                         type="text"
+                        aria-label={`Medication ${idx + 1}`}
                         value={med}
                         onChange={(e) => updateMedication(idx, e.target.value)}
                         placeholder="e.g., Metformin 500mg once daily with dinner"
@@ -840,12 +881,14 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
                         <input
                           type="text"
+                          aria-label={`Allergy ${idx + 1} substance`}
                           placeholder="Substance (e.g., Penicillin)"
                           value={alg.substance}
                           onChange={(e) => updateAllergy(idx, { substance: e.target.value })}
                           className="sm:col-span-7 px-2.5 py-1.5 text-xs border border-slate-300 rounded-md bg-white"
                         />
                         <select
+                          aria-label={`Allergy ${idx + 1} severity`}
                           value={alg.severity}
                           onChange={(e) =>
                             updateAllergy(idx, {
@@ -870,6 +913,7 @@ export const UploadRecordScreen: React.FC<UploadRecordScreenProps> = ({
                       </div>
                       <input
                         type="text"
+                        aria-label={`Allergy ${idx + 1} reaction`}
                         placeholder="Reaction description"
                         value={alg.reaction}
                         onChange={(e) => updateAllergy(idx, { reaction: e.target.value })}

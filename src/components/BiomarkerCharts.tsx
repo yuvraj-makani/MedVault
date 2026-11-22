@@ -219,10 +219,21 @@ export const BiomarkerCharts: React.FC<BiomarkerChartsProps> = ({ records, onSel
                 return (
                   <g
                     key={pt.record.id}
-                    className="cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Inspect ${pt.record.id} (${pt.date}, ${metric === 'hba1c' ? `${pt.value}%` : `${pt.value} mg/dL`})`}
+                    className="cursor-pointer focus:outline-none"
                     onMouseEnter={() => setHoveredIdx(i)}
                     onMouseLeave={() => setHoveredIdx(null)}
+                    onFocus={() => setHoveredIdx(i)}
+                    onBlur={() => setHoveredIdx(null)}
                     onClick={() => onSelectRecord?.(pt.record)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectRecord?.(pt.record);
+                      }
+                    }}
                   >
                     <circle
                       cx={pt.x}

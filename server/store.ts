@@ -428,8 +428,22 @@ export async function initDb(): Promise<MedVaultDatabase> {
   if (fs.existsSync(DB_FILE)) {
     try {
       const raw = fs.readFileSync(DB_FILE, 'utf8');
-      const parsed = JSON.parse(raw) as MedVaultDatabase;
-      dbCache = parsed;
+      const parsed = JSON.parse(raw) as Partial<MedVaultDatabase>;
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !parsed.patient?.id ||
+        !Array.isArray(parsed.doctors) ||
+        !Array.isArray(parsed.records) ||
+        !Array.isArray(parsed.consents) ||
+        !Array.isArray(parsed.accessLogs)
+      ) {
+        throw new Error('Invalid persisted database schema');
+      }
+      dbCache = {
+        ...parsed,
+        allergyResolutions: parsed.allergyResolutions ?? {},
+      } as MedVaultDatabase;
       for (const rec of dbCache.records) {
         const filePath = resolveSafeUploadPath(rec.storageKey);
         if (!fs.existsSync(filePath)) {

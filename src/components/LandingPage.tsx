@@ -38,7 +38,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDemo, loadingR
             MedVault
           </a>
 
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
+          <nav
+            aria-label="Primary navigation"
+            className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600"
+          >
             <a
               href="#problem"
               className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"

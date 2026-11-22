@@ -4,6 +4,7 @@ import type {
   ConsentScope,
   MedicalRecord,
 } from '../src/types.js';
+import { buildAllergyConflictEvidence } from './gemini.js';
 
 export const SEEDED_RECORD_IDS = [
   'REC-101',
@@ -221,17 +222,7 @@ export function buildSampleAiSummary(params: {
   }
 
   const allergyConflicts: AISummaryResult['allergyConflicts'] = params.discrepancies.map((d) => {
-    const evidenceSnippets = d.entries
-      .filter((e) => permittedMap.has(e.sourceRecordId))
-      .map((e) => ({
-        recordId: e.sourceRecordId,
-        hospital: e.hospital,
-        severity: e.severity,
-        excerpt: `${e.substance} (${e.severity}): ${e.reaction}`,
-      }));
-    const conflictReason = `Conflicting severity levels recorded across care facilities for ${d.substance}: ${evidenceSnippets
-      .map((s) => `${s.recordId} (${s.hospital}) logged ${s.severity}`)
-      .join(' vs. ')}.`;
+    const { evidenceSnippets, conflictReason } = buildAllergyConflictEvidence(d, permittedMap);
 
     return {
       substance: d.substance,

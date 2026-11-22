@@ -18,10 +18,6 @@ export function setAuthToken(token: string | null): void {
   memoryToken = token;
 }
 
-export function getAuthToken(): string | null {
-  return memoryToken;
-}
-
 export class ApiError extends Error {
   status: number;
   data: Record<string, unknown>;
@@ -115,10 +111,6 @@ export async function fetchPatientDashboard(): Promise<{
   return apiFetch('/api/patient/dashboard');
 }
 
-export async function fetchRecords(): Promise<{ records: MedicalRecord[]; scope?: string }> {
-  return apiFetch('/api/records');
-}
-
 export async function extractRecordWithAi(file: File): Promise<{ draft: ExtractionDraft }> {
   const formData = new FormData();
   formData.append('file', file);
@@ -149,13 +141,6 @@ export async function fetchSecureFileBlobUrl(
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
   return { blobUrl, contentType: res.headers.get('Content-Type') || blob.type };
-}
-
-export async function fetchConsents(): Promise<{
-  consents: ConsentGrant[];
-  accessLogs?: AccessLogEntry[];
-}> {
-  return apiFetch('/api/consents');
 }
 
 export async function requestDoctorConsent(

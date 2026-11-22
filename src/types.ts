@@ -91,6 +91,15 @@ export const KNOWN_HOSPITALS: readonly string[] = [
   'Metro Health Clinic',
 ] as const;
 
+export const VALID_FACT_FLAGS: ReadonlySet<NonNullable<ExtractedFact['flag']>> = new Set([
+  'normal',
+  'borderline',
+  'high',
+  'low',
+  'critical',
+  'unverified',
+]);
+
 export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function compareRecordDates(
@@ -98,8 +107,8 @@ export function compareRecordDates(
   b: Pick<MedicalRecord, 'date' | 'createdAt'>,
   order: 'asc' | 'desc' = 'desc'
 ): number {
-  const aKey = ISO_DATE_RE.test(a.date) ? a.date : a.createdAt.slice(0, 10);
-  const bKey = ISO_DATE_RE.test(b.date) ? b.date : b.createdAt.slice(0, 10);
+  const aKey = ISO_DATE_RE.test(a.date) ? a.date : (a.createdAt || '').slice(0, 10);
+  const bKey = ISO_DATE_RE.test(b.date) ? b.date : (b.createdAt || '').slice(0, 10);
   return order === 'desc' ? bKey.localeCompare(aKey) : aKey.localeCompare(bKey);
 }
 

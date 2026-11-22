@@ -8,6 +8,7 @@ import { createServer as createViteServer } from 'vite';
 import {
   ISO_DATE_RE,
   RECORD_CATEGORIES,
+  VALID_FACT_FLAGS,
   buildSummaryRecordSignature,
   compareRecordDates,
   type AISummaryResult,
@@ -189,15 +190,6 @@ function sanitizeStringList(raw: unknown): string[] {
     .filter(Boolean);
 }
 
-const VALID_FACT_FLAGS = new Set<NonNullable<ExtractedFact['flag']>>([
-  'normal',
-  'borderline',
-  'high',
-  'low',
-  'critical',
-  'unverified',
-]);
-
 function sanitizeFacts(raw: unknown): ExtractedFact[] {
   if (!Array.isArray(raw)) return [];
   const facts: ExtractedFact[] = [];
@@ -359,7 +351,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
 
   // Demo-only role switcher issuing real server-signed Bearer tokens
   app.post('/api/auth/demo-session', (req, res) => {
-    const { role, doctorId } = req.body as { role?: string; doctorId?: string };
+    const { role, doctorId } = (req.body ?? {}) as { role?: string; doctorId?: string };
     const db = getDb();
 
     let user: AuthUser | undefined;
@@ -699,7 +691,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       return;
     }
 
-    const body = req.body as Partial<MedicalRecord>;
+    const body = (req.body ?? {}) as Partial<MedicalRecord>;
     let updatedRecord: MedicalRecord | undefined;
 
     mutateDb((db) => {
@@ -837,7 +829,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       return;
     }
 
-    const { purpose, scope } = req.body as { purpose?: string; scope?: string };
+    const { purpose, scope } = (req.body ?? {}) as { purpose?: string; scope?: string };
     const cleanPurpose = (purpose ?? '').trim() || 'Clinical consultation and cross-hospital history review';
     const cleanScope = scope === 'Labs & Allergies Only' ? 'Labs & Allergies Only' : 'Full History';
 
@@ -890,7 +882,7 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
       return;
     }
 
-    const { status, scope } = req.body as { status?: string; scope?: string };
+    const { status, scope } = (req.body ?? {}) as { status?: string; scope?: string };
     if (status !== 'approved' && status !== 'revoked') {
       res.status(400).json({ error: 'Status must be "approved" or "revoked".' });
       return;
@@ -990,13 +982,20 @@ export async function createMedVaultApp(options: { attachVite?: boolean } = {}):
     }
 
     const db = getDb();
-    const consent = db.consents.find((c) => c.doctorId === user.id);
-    if (!consent || consent.status !== 'approved') {
-      res.status(403).json({ error: 'Active patient consent is required to verify clinical alerts.' });
-      return;
-    }
+    const consent = getApprovedDoctorConsentOrDeny({
+      user,
+      res,
+      targetId: db.patient.id,
+      deniedDetail: (status) =>
+        `Blocked allergy verification by ${user.name} (consent status: ${status}).`,
+      errorMessage: 'Active patient consent is required to verify clinical alerts.',
+    });
+    if (!consent) return;
 
-    const { substance, resolutionNote } = req.body as { substance?: string; resolutionNote?: string };
+    const { substance, resolutionNote } = (req.body ?? {}) as {
+      substance?: string;
+      resolutionNote?: string;
+    };
     const cleanSubstance = (substance ?? '').trim().toLowerCase();
     const cleanNote = (resolutionNote ?? '').trim();
 
